@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API = "http://localhost:3000/api";
+const API = "https://shs-ngo-backend.onrender.com";
 
 export const apiClient = axios.create({
   baseURL: API,
