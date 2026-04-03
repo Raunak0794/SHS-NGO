@@ -17,14 +17,12 @@ const studyRoutes = require("./routes/study.route");
 
 const app = express();
 
-// ✅ CORS – allow frontend origin with credentials
-// ================= CORS DYNAMIC CONFIGURATION =================
-// ================= CORS CONFIGURATION =================
+// ================= DYNAMIC CORS =================
+// Allow localhost, any Vercel preview, and a specific production URL
 const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  /^https:\/\/.*\.vercel\.app$/,  // allows any Vercel preview deployment
-  process.env.FRONTEND_URL,        // optional: specific production URL
+  'http://localhost:5173',                          // local dev
+  /^https:\/\/.*\.vercel\.app$/,                   // any Vercel preview deployment
+  process.env.FRONTEND_URL,                        // production URL (optional)
 ].filter(Boolean);
 
 const corsOptions = {
@@ -43,7 +41,7 @@ const corsOptions = {
     if (isAllowed) {
       callback(null, true);
     } else {
-      console.log(`CORS blocked origin: ${origin}`);
+      console.error(`CORS blocked origin: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -52,6 +50,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // handle preflight
 
 app.use(express.json());
 app.use(cookieParser());
@@ -101,11 +100,11 @@ app.get('/auth/google/callback',
     );
     res.cookie('token', token, {
       httpOnly: true,
-      secure: false, // ✅ set false for local development (HTTP)
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       maxAge: 24 * 60 * 60 * 1000,
     });
-    res.redirect('http://localhost:5173/auth/google/success');
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/auth/google/success`);
   }
 );
 
