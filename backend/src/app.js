@@ -19,19 +19,31 @@ const app = express();
 
 // ✅ CORS – allow frontend origin with credentials
 // ================= CORS DYNAMIC CONFIGURATION =================
+// ================= CORS CONFIGURATION =================
 const allowedOrigins = [
-  'http://localhost:5173',                     // local development
-  'https://shs-ngo-seven.vercel.app',          // your deployed frontend
-  process.env.FRONTEND_URL,                    // optional fallback from env
+  'http://localhost:5173',
+  'http://localhost:3000',
+  /^https:\/\/.*\.vercel\.app$/,  // allows any Vercel preview deployment
+  process.env.FRONTEND_URL,        // optional: specific production URL
 ].filter(Boolean);
 
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
+    
+    // Check if origin matches any allowed pattern
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (allowed instanceof RegExp) {
+        return allowed.test(origin);
+      }
+      return allowed === origin;
+    });
+    
+    if (isAllowed) {
       callback(null, true);
     } else {
+      console.log(`CORS blocked origin: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
   },
