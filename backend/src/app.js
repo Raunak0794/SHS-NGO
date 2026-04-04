@@ -20,9 +20,7 @@ app.set('trust proxy', 1);
 
 // ================= CORS CONFIGURATION =================
 const allowedOrigins = [
-  'http://localhost:5173',
-  /^https:\/\/.*\.vercel\.app$/,
-  process.env.FRONTEND_URL,
+  process.env.FRONTEND_URL
 ].filter(Boolean);
 
 const corsOptions = {
