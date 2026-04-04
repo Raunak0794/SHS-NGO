@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   CardContent,
+  CardActions,
   Container,
   Grid,
   Paper,
@@ -18,11 +19,10 @@ import {
   DialogActions,
   Alert,
   CircularProgress,
+  Skeleton,
 } from "@mui/material";
-import { CloudUpload, CheckCircle, School, TrendingUp } from "lucide-react";
-import { apiClient } from "../services/api"; // ✅ use configured client
-
-const API_BASE_URL = "http://localhost:3000/api";
+import { CloudUpload, CheckCircle, School } from "lucide-react";
+import { apiClient } from "../services/api";
 
 function AIDashboard() {
   const [tabValue, setTabValue] = useState(0);
@@ -37,26 +37,43 @@ function AIDashboard() {
   const [error, setError] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
 
+  // Fetch all sessions
   const fetchSessions = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await apiClient.get("/study/sessions"); // ✅ use apiClient
+      const res = await apiClient.get("/study/sessions");
       setSessions(res.data.sessions);
-      if (res.data.sessions.length > 0) {
+      if (res.data.sessions.length > 0 && !currentSession) {
         setCurrentSession(res.data.sessions[0]);
+      } else if (currentSession) {
+        // Keep current session selected if it still exists
+        const stillExists = res.data.sessions.find(s => s._id === currentSession._id);
+        if (!stillExists && res.data.sessions.length > 0) {
+          setCurrentSession(res.data.sessions[0]);
+        }
       }
+      setError(null);
     } catch (err) {
-      setError("Failed to load study sessions");
+      setError("Failed to load study sessions. Please try again.");
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentSession]);
 
   useEffect(() => {
     fetchSessions();
   }, [fetchSessions]);
 
+  // Helper to update both sessions list and current session
+  const updateSessionInState = (updatedSession) => {
+    setSessions(prev =>
+      prev.map(s => (s._id === updatedSession._id ? updatedSession : s))
+    );
+    setCurrentSession(updatedSession);
+  };
+
+  // File upload handler
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -73,24 +90,24 @@ function AIDashboard() {
       const res = await apiClient.post("/study/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      setCurrentSession(res.data.studySession);
-      setSessions((prev) =>
-        prev.map((s) => (s._id === res.data.studySession._id ? res.data.studySession : s))
-      );
+      updateSessionInState(res.data.studySession);
       setError(null);
     } catch (err) {
       setError("Failed to upload file: " + (err.response?.data?.error || err.message));
     } finally {
       setUploadingFile(false);
+      setSelectedFile(null);
+      // Clear file input value to allow re-upload of same file
+      e.target.value = "";
     }
   };
 
+  // Generate summary
   const handleGenerateSummary = async () => {
     if (!currentSession?._id) {
       setError("Please select a study session first");
       return;
     }
-
     setGenerating(true);
     try {
       const res = await apiClient.post(`/study/${currentSession._id}/summary`, {});
@@ -98,10 +115,9 @@ function AIDashboard() {
       setDialogTitle("📚 Study Summary");
       setDialogContent(`${summary.aiGenerated}\n\nKey Points:\n• ${summary.keyPoints.join("\n• ")}`);
       setOpenDialog(true);
-      setCurrentSession((prev) => ({
-        ...prev,
-        summary: summary,
-      }));
+      // Update local state
+      const updatedSession = { ...currentSession, summary };
+      updateSessionInState(updatedSession);
     } catch (err) {
       setError("Failed to generate summary: " + (err.response?.data?.error || err.message));
     } finally {
@@ -109,23 +125,21 @@ function AIDashboard() {
     }
   };
 
+  // Generate practice questions
   const handleGenerateQuestions = async () => {
     if (!currentSession?._id) {
       setError("Please select a study session first");
       return;
     }
-
     setGenerating(true);
     try {
       const res = await apiClient.post(`/study/${currentSession._id}/questions`, {
         numQuestions: 5,
         difficulty: "intermediate",
       });
-      setCurrentSession((prev) => ({
-        ...prev,
-        practiceQuestions: res.data.questions,
-      }));
-      setTabValue(2);
+      const updatedSession = { ...currentSession, practiceQuestions: res.data.questions };
+      updateSessionInState(updatedSession);
+      setTabValue(2); // switch to practice tab
       setError(null);
     } catch (err) {
       setError("Failed to generate questions: " + (err.response?.data?.error || err.message));
@@ -134,19 +148,17 @@ function AIDashboard() {
     }
   };
 
+  // Generate learning path
   const handleGenerateLearningPath = async () => {
     if (!currentSession?._id) {
       setError("Please select a study session first");
       return;
     }
-
     setGenerating(true);
     try {
       const res = await apiClient.post(`/study/${currentSession._id}/learning-path`, {});
-      setCurrentSession((prev) => ({
-        ...prev,
-        learningPath: res.data.learningPath,
-      }));
+      const updatedSession = { ...currentSession, learningPath: res.data.learningPath };
+      updateSessionInState(updatedSession);
       setTabValue(3);
       setError(null);
     } catch (err) {
@@ -156,6 +168,7 @@ function AIDashboard() {
     }
   };
 
+  // Submit answer to a practice question
   const handleSubmitAnswer = async (questionId, answer) => {
     try {
       const res = await apiClient.post("/study/submit-answer", {
@@ -164,15 +177,17 @@ function AIDashboard() {
         userAnswer: answer,
       });
 
-      setCurrentSession((prev) => ({
-        ...prev,
+      const updatedQuestions = currentSession.practiceQuestions.map(q =>
+        q._id === questionId
+          ? { ...q, userAnswer: answer, isCorrect: res.data.isCorrect }
+          : q
+      );
+      const updatedSession = {
+        ...currentSession,
         progress: res.data.progress,
-        practiceQuestions: prev.practiceQuestions.map((q) =>
-          q._id === questionId
-            ? { ...q, userAnswer: answer, isCorrect: res.data.isCorrect }
-            : q
-        ),
-      }));
+        practiceQuestions: updatedQuestions,
+      };
+      updateSessionInState(updatedSession);
 
       setDialogTitle(res.data.isCorrect ? "✅ Correct!" : "❌ Incorrect");
       setDialogContent(`Explanation: ${res.data.explanation}\nCorrect Answer: ${res.data.correctAnswer}`);
@@ -182,13 +197,12 @@ function AIDashboard() {
     }
   };
 
+  // Mark learning path step as completed
   const handleStepProgress = async (stepNumber) => {
     try {
       const res = await apiClient.put(`/study/${currentSession._id}/progress`, { stepNumber });
-      setCurrentSession((prev) => ({
-        ...prev,
-        learningPath: res.data.learningPath,
-      }));
+      const updatedSession = { ...currentSession, learningPath: res.data.learningPath };
+      updateSessionInState(updatedSession);
     } catch (err) {
       setError("Failed to update progress: " + (err.response?.data?.error || err.message));
     }
@@ -225,132 +239,103 @@ function AIDashboard() {
         </Tabs>
       </Paper>
 
-     {/* Tab 0: My Sessions */}
-{tabValue === 0 && (
-  <Box>
-    {/* Loading state */}
-    {loading && (
-      <Grid container spacing={2}>
-        {[1, 2, 3].map((i) => (
-          <Grid item xs={12} sm={6} md={4} key={i}>
-            <Skeleton variant="rectangular" height={180} sx={{ borderRadius: 2 }} />
-          </Grid>
-        ))}
-      </Grid>
-    )}
-
-    {/* Error state */}
-    {error && (
-      <Alert severity="error" sx={{ mb: 2 }}>
-        Failed to load sessions: {error}
-        <Button size="small" onClick={refetchSessions} sx={{ ml: 2 }}>
-          Retry
-        </Button>
-      </Alert>
-    )}
-
-    {/* Empty state */}
-    {!loading && !error && sessions.length === 0 && (
-      <Card sx={{ p: 4, textAlign: "center" }}>
-        <Typography variant="h6" color="textSecondary">
-          No study sessions yet
-        </Typography>
-        <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-          Upload a file or create a session to get started.
-        </Typography>
-      </Card>
-    )}
-
-    {/* Sessions grid */}
-    {!loading && !error && sessions.length > 0 && (
-      <Grid container spacing={2}>
-        {sessions.map((session) => (
-          <Grid item xs={12} sm={6} md={4} key={session._id}>
-            <Card
-              onClick={() => setCurrentSession(session)}
-              onKeyDown={(e) => e.key === "Enter" && setCurrentSession(session)}
-              role="button"
-              tabIndex={0}
-              sx={{
-                cursor: "pointer",
-                border: currentSession?._id === session._id ? "2px solid #1976d2" : "1px solid #e0e0e0",
-                transition: "all 0.2s",
-                "&:hover": { boxShadow: 4, transform: "translateY(-2px)" },
-                "&:focus-visible": { outline: "2px solid #1976d2" },
-                height: "100%",
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
-              <CardContent sx={{ flexGrow: 1 }}>
-                <Typography variant="h6" fontWeight="bold" noWrap title={session.title}>
-                  {session.title}
-                </Typography>
-                <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5 }}>
-                  {session.uploadedFile?.originalName || "No file attached"}
-                </Typography>
-
-                {/* Topics */}
-                {session.content?.extractedTopics?.length > 0 && (
-                  <Box sx={{ mt: 1.5, mb: 1 }}>
-                    {session.content.extractedTopics.slice(0, 3).map((topic, idx) => (
-                      <Chip
-                        key={idx}
-                        label={topic}
-                        size="small"
-                        variant="outlined"
-                        sx={{ mr: 0.5, mb: 0.5 }}
-                      />
-                    ))}
-                    {session.content.extractedTopics.length > 3 && (
-                      <Chip label={`+${session.content.extractedTopics.length - 3}`} size="small" />
-                    )}
-                  </Box>
-                )}
-
-                {/* Progress */}
-                <Box sx={{ mt: 2 }}>
-                  <LinearProgress
-                    variant="determinate"
-                    value={session.progress?.accuracy ?? 0}
-                    sx={{ height: 6, borderRadius: 3 }}
-                  />
-                  <Box sx={{ display: "flex", justifyContent: "space-between", mt: 0.5 }}>
-                    <Typography variant="caption" color="textSecondary">
-                      Accuracy: {(session.progress?.accuracy ?? 0).toFixed(0)}%
-                    </Typography>
-                    <Typography variant="caption" color="textSecondary">
-                      {session.progress?.questionsAnswered || 0} answered
-                    </Typography>
-                  </Box>
-                </Box>
-
-                {/* Learning path badge */}
-                {session.learningPath?.steps?.length > 0 && (
-                  <Chip
-                    label={`Learning path: ${session.learningPath.progress?.toFixed(0)}%`}
-                    size="small"
-                    color="primary"
-                    variant="outlined"
-                    sx={{ mt: 1 }}
-                  />
-                )}
-              </CardContent>
-
-              {/* Timestamp */}
-              <CardActions sx={{ pt: 0, justifyContent: "flex-end" }}>
-                <Typography variant="caption" color="textSecondary">
-                  Created: {new Date(session.createdAt).toLocaleDateString()}
-                </Typography>
-              </CardActions>
+      {/* ========== TAB 0: MY SESSIONS ========== */}
+      {tabValue === 0 && (
+        <Box>
+          {sessions.length === 0 ? (
+            <Card sx={{ p: 4, textAlign: "center" }}>
+              <Typography variant="h6" color="textSecondary">
+                No study sessions yet
+              </Typography>
+              <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+                Upload a file or create a session to get started.
+              </Typography>
             </Card>
-          </Grid>
-        ))}
-      </Grid>
-    )}
-  </Box>
-)}
-      {/* Tab 1: Upload & Summarize */}
+          ) : (
+            <Grid container spacing={2}>
+              {sessions.map((session) => (
+                <Grid item xs={12} sm={6} md={4} key={session._id}>
+                  <Card
+                    onClick={() => setCurrentSession(session)}
+                    onKeyDown={(e) => e.key === "Enter" && setCurrentSession(session)}
+                    role="button"
+                    tabIndex={0}
+                    sx={{
+                      cursor: "pointer",
+                      border: currentSession?._id === session._id ? "2px solid #1976d2" : "1px solid #e0e0e0",
+                      transition: "all 0.2s",
+                      "&:hover": { boxShadow: 4, transform: "translateY(-2px)" },
+                      "&:focus-visible": { outline: "2px solid #1976d2" },
+                      height: "100%",
+                      display: "flex",
+                      flexDirection: "column",
+                    }}
+                  >
+                    <CardContent sx={{ flexGrow: 1 }}>
+                      <Typography variant="h6" fontWeight="bold" noWrap title={session.title}>
+                        {session.title}
+                      </Typography>
+                      <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5 }}>
+                        {session.uploadedFile?.originalName || "No file attached"}
+                      </Typography>
+
+                      {session.content?.extractedTopics?.length > 0 && (
+                        <Box sx={{ mt: 1.5, mb: 1 }}>
+                          {session.content.extractedTopics.slice(0, 3).map((topic, idx) => (
+                            <Chip
+                              key={idx}
+                              label={topic}
+                              size="small"
+                              variant="outlined"
+                              sx={{ mr: 0.5, mb: 0.5 }}
+                            />
+                          ))}
+                          {session.content.extractedTopics.length > 3 && (
+                            <Chip label={`+${session.content.extractedTopics.length - 3}`} size="small" />
+                          )}
+                        </Box>
+                      )}
+
+                      <Box sx={{ mt: 2 }}>
+                        <LinearProgress
+                          variant="determinate"
+                          value={session.progress?.accuracy ?? 0}
+                          sx={{ height: 6, borderRadius: 3 }}
+                        />
+                        <Box sx={{ display: "flex", justifyContent: "space-between", mt: 0.5 }}>
+                          <Typography variant="caption" color="textSecondary">
+                            Accuracy: {(session.progress?.accuracy ?? 0).toFixed(0)}%
+                          </Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            {session.progress?.questionsAnswered || 0} answered
+                          </Typography>
+                        </Box>
+                      </Box>
+
+                      {session.learningPath?.steps?.length > 0 && (
+                        <Chip
+                          label={`Learning path: ${session.learningPath.progress?.toFixed(0)}%`}
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                          sx={{ mt: 1 }}
+                        />
+                      )}
+                    </CardContent>
+                    <CardActions sx={{ pt: 0, justifyContent: "flex-end" }}>
+                      <Typography variant="caption" color="textSecondary">
+                        Created: {new Date(session.createdAt).toLocaleDateString()}
+                      </Typography>
+                    </CardActions>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          )}
+        </Box>
+      )}
+
+      {/* ========== TAB 1: UPLOAD & SUMMARIZE ========== */}
       {tabValue === 1 && (
         <Grid container spacing={3}>
           <Grid item xs={12} md={6}>
@@ -374,14 +359,19 @@ function AIDashboard() {
                   <CloudUpload size={40} color="#1976d2" />
                   <Typography mt={2}>Drag and drop your file or click to browse</Typography>
                   <Typography variant="caption" color="gray">
-                    Supported: PDF, TXT, MD, DOC, DOCX (Max 50MB)
+                    Supported: TXT, MD, CSV, JSON, JS, HTML, CSS, XML, LOG (Max 10MB)
                   </Typography>
-                  <input type="file" hidden onChange={handleFileUpload} accept=".pdf,.txt,.md,.doc,.docx" />
+                  <input
+                    type="file"
+                    hidden
+                    onChange={handleFileUpload}
+                    accept=".txt,.md,.csv,.json,.js,.html,.css,.xml,.log"
+                  />
                 </Box>
                 {uploadingFile && (
-                  <Box mt={2}>
+                  <Box mt={2} display="flex" alignItems="center">
                     <CircularProgress size={24} sx={{ mr: 1 }} />
-                    <Typography variant="body2">Uploading...</Typography>
+                    <Typography variant="body2">Uploading and processing...</Typography>
                   </Box>
                 )}
                 {selectedFile && !uploadingFile && (
@@ -414,7 +404,7 @@ function AIDashboard() {
                   </Box>
                 ) : (
                   <Typography variant="body2" color="gray">
-                    Upload a file and generate a summary using Gemini AI
+                    Upload a file and generate a summary using Gemini AI.
                   </Typography>
                 )}
                 <Button
@@ -424,7 +414,7 @@ function AIDashboard() {
                   onClick={handleGenerateSummary}
                   disabled={!currentSession?.content?.rawText || generating}
                 >
-                  {generating ? "Generating..." : "Generate Summary"}
+                  {generating ? <CircularProgress size={24} /> : "Generate Summary"}
                 </Button>
               </CardContent>
             </Card>
@@ -432,141 +422,142 @@ function AIDashboard() {
         </Grid>
       )}
 
-      {/* Tab 2: Practice Questions */}
+      {/* ========== TAB 2: PRACTICE QUESTIONS ========== */}
       {tabValue === 2 && (
-        <Grid container spacing={3}>
-          <Grid item xs={12}>
-            <Button
-              variant="contained"
-              onClick={handleGenerateQuestions}
-              disabled={!currentSession?.content?.rawText || generating}
-              sx={{ mb: 2 }}
-            >
-              {generating ? "Generating Questions..." : "Generate Practice Questions"}
-            </Button>
-            {currentSession?.practiceQuestions?.length > 0 ? (
-              <Box>
-                {currentSession.practiceQuestions.map((q, idx) => (
-                  <Card key={idx} sx={{ mb: 2 }}>
-                    <CardContent>
-                      <Typography variant="h6" mb={2}>
-                        Q{idx + 1}. {q.question}
-                      </Typography>
-                      <Grid container spacing={1} mb={2}>
-                        {(q.options || []).map((opt, optIdx) => (
-                          <Grid item xs={12} sm={6} key={optIdx}>
-                            <Button
-                              variant={q.userAnswer === opt ? (q.isCorrect ? "contained" : "outlined") : "outlined"}
-                              color={q.userAnswer === opt ? (q.isCorrect ? "success" : "error") : "primary"}
-                              fullWidth
-                              disabled={!!q.userAnswer}
-                              onClick={() => handleSubmitAnswer(q._id, opt)}
-                            >
-                              {opt}
-                            </Button>
-                          </Grid>
-                        ))}
-                      </Grid>
-                      {q.userAnswer && (
-                        <Alert severity={q.isCorrect ? "success" : "error"}>{q.explanation}</Alert>
-                      )}
-                      <Chip label={`Difficulty: ${q.difficulty}`} size="small" sx={{ mr: 1, mt: 1 }} />
-                      <Chip label={`Topic: ${q.topic}`} size="small" sx={{ mt: 1 }} />
-                    </CardContent>
-                  </Card>
-                ))}
-              </Box>
-            ) : (
-              <Card>
-                <CardContent sx={{ textAlign: "center", py: 4 }}>
-                  <Typography color="gray">No questions generated yet. Click the button above.</Typography>
-                </CardContent>
-              </Card>
-            )}
-          </Grid>
-        </Grid>
-      )}
-
-      {/* Tab 3: Learning Path */}
-      {tabValue === 3 && (
-        <Grid container spacing={3}>
-          <Grid item xs={12}>
-            <Button
-              variant="contained"
-              onClick={handleGenerateLearningPath}
-              disabled={!currentSession?.content?.rawText || generating}
-              sx={{ mb: 2 }}
-            >
-              {generating ? "Generating..." : "Generate Adaptive Learning Path"}
-            </Button>
-            {currentSession?.learningPath?.steps?.length > 0 ? (
-              <Box>
-                <LinearProgress
-                  variant="determinate"
-                  value={currentSession.learningPath.progress}
-                  sx={{ mb: 3, height: 10, borderRadius: 5 }}
-                />
-                <Typography mb={2}>Progress: {currentSession.learningPath.progress.toFixed(1)}%</Typography>
-                {currentSession.learningPath.steps.map((step) => (
-                  <Card
-                    key={step.step}
-                    sx={{
-                      mb: 2,
-                      border: step.step === currentSession.learningPath.currentStep ? "2px solid #1976d2" : "none",
-                      bgcolor: currentSession.learningPath.completedSteps.includes(step.step) ? "#f1f8e9" : "white",
-                    }}
-                  >
-                    <CardContent>
-                      <Box display="flex" alignItems="center" mb={1}>
-                        {currentSession.learningPath.completedSteps.includes(step.step) ? (
-                          <CheckCircle size={24} color="green" style={{ marginRight: 8 }} />
-                        ) : (
-                          <School size={24} color="#1976d2" style={{ marginRight: 8 }} />
-                        )}
-                        <Typography variant="h6" fontWeight="bold">
-                          Step {step.step}: {step.title}
-                        </Typography>
-                      </Box>
-                      <Typography variant="body2" mb={2}>
-                        {step.description}
-                      </Typography>
-                      <Typography variant="subtitle2" fontWeight="bold" mb={1}>
-                        Learning Objectives:
-                      </Typography>
-                      {(step.objectives || []).map((obj, idx) => (
-                        <Typography key={idx} variant="body2">
-                          • {obj}
-                        </Typography>
-                      ))}
-                      <Typography variant="subtitle2" fontWeight="bold" mt={2} mb={1}>
-                        Estimated Duration: {step.duration} minutes
-                      </Typography>
-                      {!currentSession.learningPath.completedSteps.includes(step.step) && (
-                        <Button variant="contained" size="small" sx={{ mt: 2 }} onClick={() => handleStepProgress(step.step)}>
-                          Mark as Completed
+        <Box>
+          <Button
+            variant="contained"
+            onClick={handleGenerateQuestions}
+            disabled={!currentSession?.content?.rawText || generating}
+            sx={{ mb: 2 }}
+          >
+            {generating ? "Generating Questions..." : "Generate Practice Questions"}
+          </Button>
+          {currentSession?.practiceQuestions?.length > 0 ? (
+            currentSession.practiceQuestions.map((q, idx) => (
+              <Card key={idx} sx={{ mb: 2 }}>
+                <CardContent>
+                  <Typography variant="h6" mb={2}>
+                    Q{idx + 1}. {q.question}
+                  </Typography>
+                  <Grid container spacing={1} mb={2}>
+                    {(q.options || []).map((opt, optIdx) => (
+                      <Grid item xs={12} sm={6} key={optIdx}>
+                        <Button
+                          variant={q.userAnswer === opt ? (q.isCorrect ? "contained" : "outlined") : "outlined"}
+                          color={q.userAnswer === opt ? (q.isCorrect ? "success" : "error") : "primary"}
+                          fullWidth
+                          disabled={!!q.userAnswer}
+                          onClick={() => handleSubmitAnswer(q._id, opt)}
+                        >
+                          {opt}
                         </Button>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
-              </Box>
-            ) : (
-              <Card>
-                <CardContent sx={{ textAlign: "center", py: 4 }}>
-                  <Typography color="gray">No learning path generated yet.</Typography>
+                      </Grid>
+                    ))}
+                  </Grid>
+                  {q.userAnswer && (
+                    <Alert severity={q.isCorrect ? "success" : "error"} sx={{ mt: 1 }}>
+                      {q.explanation}
+                    </Alert>
+                  )}
+                  <Chip label={`Difficulty: ${q.difficulty}`} size="small" sx={{ mr: 1, mt: 1 }} />
+                  <Chip label={`Topic: ${q.topic}`} size="small" sx={{ mt: 1 }} />
                 </CardContent>
               </Card>
-            )}
-          </Grid>
-        </Grid>
+            ))
+          ) : (
+            <Card>
+              <CardContent sx={{ textAlign: "center", py: 4 }}>
+                <Typography color="gray">No questions generated yet. Click the button above.</Typography>
+              </CardContent>
+            </Card>
+          )}
+        </Box>
       )}
 
-      {/* Tab 4: Progress Stats */}
+      {/* ========== TAB 3: LEARNING PATH ========== */}
+      {tabValue === 3 && (
+        <Box>
+          <Button
+            variant="contained"
+            onClick={handleGenerateLearningPath}
+            disabled={!currentSession?.content?.rawText || generating}
+            sx={{ mb: 2 }}
+          >
+            {generating ? "Generating..." : "Generate Adaptive Learning Path"}
+          </Button>
+          {currentSession?.learningPath?.steps?.length > 0 ? (
+            <Box>
+              <LinearProgress
+                variant="determinate"
+                value={currentSession.learningPath.progress}
+                sx={{ mb: 3, height: 10, borderRadius: 5 }}
+              />
+              <Typography mb={2}>Overall Progress: {currentSession.learningPath.progress.toFixed(1)}%</Typography>
+              {currentSession.learningPath.steps.map((step) => (
+                <Card
+                  key={step.step}
+                  sx={{
+                    mb: 2,
+                    border: step.step === currentSession.learningPath.currentStep ? "2px solid #1976d2" : "none",
+                    bgcolor: currentSession.learningPath.completedSteps.includes(step.step) ? "#f1f8e9" : "white",
+                  }}
+                >
+                  <CardContent>
+                    <Box display="flex" alignItems="center" mb={1}>
+                      {currentSession.learningPath.completedSteps.includes(step.step) ? (
+                        <CheckCircle size={24} color="green" style={{ marginRight: 8 }} />
+                      ) : (
+                        <School size={24} color="#1976d2" style={{ marginRight: 8 }} />
+                      )}
+                      <Typography variant="h6" fontWeight="bold">
+                        Step {step.step}: {step.title}
+                      </Typography>
+                    </Box>
+                    <Typography variant="body2" mb={2}>
+                      {step.description}
+                    </Typography>
+                    <Typography variant="subtitle2" fontWeight="bold" mb={1}>
+                      Learning Objectives:
+                    </Typography>
+                    {(step.objectives || []).map((obj, idx) => (
+                      <Typography key={idx} variant="body2">
+                        • {obj}
+                      </Typography>
+                    ))}
+                    <Typography variant="subtitle2" fontWeight="bold" mt={2} mb={1}>
+                      Estimated Duration: {step.duration} minutes
+                    </Typography>
+                    {!currentSession.learningPath.completedSteps.includes(step.step) && (
+                      <Button
+                        variant="contained"
+                        size="small"
+                        sx={{ mt: 2 }}
+                        onClick={() => handleStepProgress(step.step)}
+                      >
+                        Mark as Completed
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </Box>
+          ) : (
+            <Card>
+              <CardContent sx={{ textAlign: "center", py: 4 }}>
+                <Typography color="gray">No learning path generated yet.</Typography>
+              </CardContent>
+            </Card>
+          )}
+        </Box>
+      )}
+
+      {/* ========== TAB 4: PROGRESS STATS ========== */}
       {tabValue === 4 && (
         <Grid container spacing={3}>
           {currentSession ? (
             <>
-              <Grid item xs={12} sm={6} md={3}>
+              <Grid item xs={12} sm={6} md={4}>
                 <Card>
                   <CardContent sx={{ textAlign: "center" }}>
                     <Typography variant="h5" fontWeight="bold" color="#1976d2">
@@ -576,7 +567,7 @@ function AIDashboard() {
                   </CardContent>
                 </Card>
               </Grid>
-              <Grid item xs={12} sm={6} md={3}>
+              <Grid item xs={12} sm={6} md={4}>
                 <Card>
                   <CardContent sx={{ textAlign: "center" }}>
                     <Typography variant="h5" fontWeight="bold" color="green">
@@ -586,23 +577,13 @@ function AIDashboard() {
                   </CardContent>
                 </Card>
               </Grid>
-              <Grid item xs={12} sm={6} md={3}>
+              <Grid item xs={12} sm={6} md={4}>
                 <Card>
                   <CardContent sx={{ textAlign: "center" }}>
                     <Typography variant="h5" fontWeight="bold" color="#ff6f00">
                       {(currentSession.progress?.accuracy || 0).toFixed(1)}%
                     </Typography>
                     <Typography variant="body2">Accuracy</Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Card>
-                  <CardContent sx={{ textAlign: "center" }}>
-                    <Typography variant="h5" fontWeight="bold" color="#9c27b0">
-                      {currentSession.progress?.timeSpent || 0}
-                    </Typography>
-                    <Typography variant="body2">Minutes Spent</Typography>
                   </CardContent>
                 </Card>
               </Grid>
@@ -628,7 +609,7 @@ function AIDashboard() {
             <Grid item xs={12}>
               <Card>
                 <CardContent sx={{ textAlign: "center", py: 4 }}>
-                  <Typography color="gray">Select a study session to view statistics</Typography>
+                  <Typography color="gray">Select a study session to view statistics.</Typography>
                 </CardContent>
               </Card>
             </Grid>
@@ -636,6 +617,7 @@ function AIDashboard() {
         </Grid>
       )}
 
+      {/* Global dialog for summaries / answers */}
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
         <DialogTitle fontWeight="bold">{dialogTitle}</DialogTitle>
         <DialogContent sx={{ whiteSpace: "pre-wrap", mt: 2 }}>
