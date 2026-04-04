@@ -31,8 +31,11 @@ export default function Login() {
   };
 
   const handleGoogleLogin = () => {
-    window.open("http://localhost:3000/auth/google", "_self");
-  };
+  window.open(
+    "https://shs-ngo-backend.onrender.com/auth/google",
+    "_self"
+  );
+};
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-4">
