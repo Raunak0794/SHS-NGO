@@ -16,6 +16,7 @@ const calendarRoutes = require("./routes/calendar.route");
 const studyRoutes = require("./routes/study.route");
 
 const app = express();
+app.set('trust proxy', 1);
 
 // ================= CORS CONFIGURATION =================
 const allowedOrigins = [
@@ -46,6 +47,7 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 app.use(passport.initialize());
+
 
 // Test route
 app.get('/', (req, res) => {
@@ -90,11 +92,11 @@ app.get('/auth/google/callback',
       { expiresIn: '1d' }
     );
     res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 24 * 60 * 60 * 1000,
-    });
+  httpOnly: true,
+  secure: true,          // must be true on HTTPS (Vercel)
+  sameSite: 'None',      // ✅ REQUIRED for cross-site
+  maxAge: 24 * 60 * 60 * 1000,
+});
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/auth/google/success`);
   }
 );
