@@ -225,57 +225,131 @@ function AIDashboard() {
         </Tabs>
       </Paper>
 
-      {/* Tab 0: My Sessions */}
-      {tabValue === 0 && (
-        <Grid container spacing={2}>
-          {sessions.length === 0 ? (
-            <Grid item xs={12}>
-              <Card sx={{ p: 3, textAlign: "center" }}>
-                <Typography>No study sessions yet. Upload material to get started!</Typography>
-              </Card>
-            </Grid>
-          ) : (
-            sessions.map((session) => (
-              <Grid item xs={12} sm={6} md={4} key={session._id}>
-                <Card
-                  onClick={() => setCurrentSession(session)}
-                  sx={{
-                    cursor: "pointer",
-                    border: currentSession?._id === session._id ? "2px solid #1976d2" : "none",
-                    transition: "all 0.3s",
-                    "&:hover": { boxShadow: 3, transform: "translateY(-4px)" },
-                  }}
-                >
-                  <CardContent>
-                    <Typography variant="h6" fontWeight="bold">
-                      {session.title}
-                    </Typography>
-                    <Typography variant="body2" color="gray" mt={1}>
-                      {session.uploadedFile?.originalName || "No file"}
-                    </Typography>
-                    {session.content?.extractedTopics && (
-                      <Box sx={{ mt: 2 }}>
-                        {session.content.extractedTopics.slice(0, 3).map((topic, idx) => (
-                          <Chip key={idx} label={topic} size="small" sx={{ mr: 1, mb: 1 }} />
-                        ))}
-                      </Box>
-                    )}
-                    <LinearProgress
-                      variant="determinate"
-                      value={session.progress?.accuracy || 0}
-                      sx={{ mt: 2 }}
-                    />
-                    <Typography variant="caption" color="gray" display="block" mt={1}>
-                      {(session.progress?.accuracy || 0).toFixed(1)}% Accuracy
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))
-          )}
-        </Grid>
-      )}
+     {/* Tab 0: My Sessions */}
+{tabValue === 0 && (
+  <Box>
+    {/* Loading state */}
+    {loading && (
+      <Grid container spacing={2}>
+        {[1, 2, 3].map((i) => (
+          <Grid item xs={12} sm={6} md={4} key={i}>
+            <Skeleton variant="rectangular" height={180} sx={{ borderRadius: 2 }} />
+          </Grid>
+        ))}
+      </Grid>
+    )}
 
+    {/* Error state */}
+    {error && (
+      <Alert severity="error" sx={{ mb: 2 }}>
+        Failed to load sessions: {error}
+        <Button size="small" onClick={refetchSessions} sx={{ ml: 2 }}>
+          Retry
+        </Button>
+      </Alert>
+    )}
+
+    {/* Empty state */}
+    {!loading && !error && sessions.length === 0 && (
+      <Card sx={{ p: 4, textAlign: "center" }}>
+        <Typography variant="h6" color="textSecondary">
+          No study sessions yet
+        </Typography>
+        <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+          Upload a file or create a session to get started.
+        </Typography>
+      </Card>
+    )}
+
+    {/* Sessions grid */}
+    {!loading && !error && sessions.length > 0 && (
+      <Grid container spacing={2}>
+        {sessions.map((session) => (
+          <Grid item xs={12} sm={6} md={4} key={session._id}>
+            <Card
+              onClick={() => setCurrentSession(session)}
+              onKeyDown={(e) => e.key === "Enter" && setCurrentSession(session)}
+              role="button"
+              tabIndex={0}
+              sx={{
+                cursor: "pointer",
+                border: currentSession?._id === session._id ? "2px solid #1976d2" : "1px solid #e0e0e0",
+                transition: "all 0.2s",
+                "&:hover": { boxShadow: 4, transform: "translateY(-2px)" },
+                "&:focus-visible": { outline: "2px solid #1976d2" },
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <CardContent sx={{ flexGrow: 1 }}>
+                <Typography variant="h6" fontWeight="bold" noWrap title={session.title}>
+                  {session.title}
+                </Typography>
+                <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5 }}>
+                  {session.uploadedFile?.originalName || "No file attached"}
+                </Typography>
+
+                {/* Topics */}
+                {session.content?.extractedTopics?.length > 0 && (
+                  <Box sx={{ mt: 1.5, mb: 1 }}>
+                    {session.content.extractedTopics.slice(0, 3).map((topic, idx) => (
+                      <Chip
+                        key={idx}
+                        label={topic}
+                        size="small"
+                        variant="outlined"
+                        sx={{ mr: 0.5, mb: 0.5 }}
+                      />
+                    ))}
+                    {session.content.extractedTopics.length > 3 && (
+                      <Chip label={`+${session.content.extractedTopics.length - 3}`} size="small" />
+                    )}
+                  </Box>
+                )}
+
+                {/* Progress */}
+                <Box sx={{ mt: 2 }}>
+                  <LinearProgress
+                    variant="determinate"
+                    value={session.progress?.accuracy ?? 0}
+                    sx={{ height: 6, borderRadius: 3 }}
+                  />
+                  <Box sx={{ display: "flex", justifyContent: "space-between", mt: 0.5 }}>
+                    <Typography variant="caption" color="textSecondary">
+                      Accuracy: {(session.progress?.accuracy ?? 0).toFixed(0)}%
+                    </Typography>
+                    <Typography variant="caption" color="textSecondary">
+                      {session.progress?.questionsAnswered || 0} answered
+                    </Typography>
+                  </Box>
+                </Box>
+
+                {/* Learning path badge */}
+                {session.learningPath?.steps?.length > 0 && (
+                  <Chip
+                    label={`Learning path: ${session.learningPath.progress?.toFixed(0)}%`}
+                    size="small"
+                    color="primary"
+                    variant="outlined"
+                    sx={{ mt: 1 }}
+                  />
+                )}
+              </CardContent>
+
+              {/* Timestamp */}
+              <CardActions sx={{ pt: 0, justifyContent: "flex-end" }}>
+                <Typography variant="caption" color="textSecondary">
+                  Created: {new Date(session.createdAt).toLocaleDateString()}
+                </Typography>
+              </CardActions>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+    )}
+  </Box>
+)}
       {/* Tab 1: Upload & Summarize */}
       {tabValue === 1 && (
         <Grid container spacing={3}>
