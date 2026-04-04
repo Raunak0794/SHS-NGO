@@ -20,7 +20,7 @@ app.set('trust proxy', 1);
 
 // ================= CORS CONFIGURATION =================
 const allowedOrigins = [
-  process.env.FRONTEND_URL
+  process.env.FRONTEND_URL || 'http://localhost:5173',
 ].filter(Boolean);
 
 const corsOptions = {
