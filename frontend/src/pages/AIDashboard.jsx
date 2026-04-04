@@ -37,6 +37,10 @@ function AIDashboard() {
   const [error, setError] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
 
+  // Summary popup state
+  const [summaryDialogOpen, setSummaryDialogOpen] = useState(false);
+  const [summaryDialogData, setSummaryDialogData] = useState(null);
+
   // Fetch all sessions
   const fetchSessions = useCallback(async () => {
     try {
@@ -46,7 +50,6 @@ function AIDashboard() {
       if (res.data.sessions.length > 0 && !currentSession) {
         setCurrentSession(res.data.sessions[0]);
       } else if (currentSession) {
-        // Keep current session selected if it still exists
         const stillExists = res.data.sessions.find(s => s._id === currentSession._id);
         if (!stillExists && res.data.sessions.length > 0) {
           setCurrentSession(res.data.sessions[0]);
@@ -73,36 +76,20 @@ function AIDashboard() {
     setCurrentSession(updatedSession);
   };
 
-  // File upload handler
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setSelectedFile(file);
-    setUploadingFile(true);
-    const formData = new FormData();
-    formData.append("file", file);
-    if (currentSession?._id) {
-      formData.append("sessionId", currentSession._id);
-    }
-
-    try {
-      const res = await apiClient.post("/study/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      updateSessionInState(res.data.studySession);
-      setError(null);
-    } catch (err) {
-      setError("Failed to upload file: " + (err.response?.data?.error || err.message));
-    } finally {
-      setUploadingFile(false);
-      setSelectedFile(null);
-      // Clear file input value to allow re-upload of same file
-      e.target.value = "";
+  // Handle click on a session card: set current session and open summary popup if summary exists
+  const handleSessionClick = (session) => {
+    setCurrentSession(session);
+    if (session.summary && session.summary.aiGenerated) {
+      setSummaryDialogData(session.summary);
+      setSummaryDialogOpen(true);
+    } else {
+      // Open popup with a message that no summary exists, and offer to generate
+      setSummaryDialogData(null);
+      setSummaryDialogOpen(true);
     }
   };
 
-  // Generate summary
+  // Generate summary (also used inside the popup)
   const handleGenerateSummary = async () => {
     if (!currentSession?._id) {
       setError("Please select a study session first");
@@ -118,6 +105,10 @@ function AIDashboard() {
       // Update local state
       const updatedSession = { ...currentSession, summary };
       updateSessionInState(updatedSession);
+      // If the summary popup is open, refresh its content
+      if (summaryDialogOpen) {
+        setSummaryDialogData(summary);
+      }
     } catch (err) {
       setError("Failed to generate summary: " + (err.response?.data?.error || err.message));
     } finally {
@@ -139,7 +130,7 @@ function AIDashboard() {
       });
       const updatedSession = { ...currentSession, practiceQuestions: res.data.questions };
       updateSessionInState(updatedSession);
-      setTabValue(2); // switch to practice tab
+      setTabValue(2);
       setError(null);
     } catch (err) {
       setError("Failed to generate questions: " + (err.response?.data?.error || err.message));
@@ -208,6 +199,34 @@ function AIDashboard() {
     }
   };
 
+  // File upload handler
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setSelectedFile(file);
+    setUploadingFile(true);
+    const formData = new FormData();
+    formData.append("file", file);
+    if (currentSession?._id) {
+      formData.append("sessionId", currentSession._id);
+    }
+
+    try {
+      const res = await apiClient.post("/study/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      updateSessionInState(res.data.studySession);
+      setError(null);
+    } catch (err) {
+      setError("Failed to upload file: " + (err.response?.data?.error || err.message));
+    } finally {
+      setUploadingFile(false);
+      setSelectedFile(null);
+      e.target.value = "";
+    }
+  };
+
   if (loading) {
     return (
       <Container sx={{ py: 4, textAlign: "center" }}>
@@ -256,8 +275,8 @@ function AIDashboard() {
               {sessions.map((session) => (
                 <Grid item xs={12} sm={6} md={4} key={session._id}>
                   <Card
-                    onClick={() => setCurrentSession(session)}
-                    onKeyDown={(e) => e.key === "Enter" && setCurrentSession(session)}
+                    onClick={() => handleSessionClick(session)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSessionClick(session)}
                     role="button"
                     tabIndex={0}
                     sx={{
@@ -616,6 +635,59 @@ function AIDashboard() {
           )}
         </Grid>
       )}
+
+      {/* ========== SUMMARY POPUP DIALOG ========== */}
+      <Dialog open={summaryDialogOpen} onClose={() => setSummaryDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle fontWeight="bold">
+          {summaryDialogData ? "📖 Session Summary" : "No Summary Available"}
+        </DialogTitle>
+        <DialogContent dividers>
+          {summaryDialogData ? (
+            <>
+              <Typography variant="body1" sx={{ whiteSpace: "pre-wrap", mb: 2 }}>
+                {summaryDialogData.aiGenerated}
+              </Typography>
+              <Typography variant="subtitle1" fontWeight="bold" mt={2}>
+                Key Points:
+              </Typography>
+              <ul>
+                {summaryDialogData.keyPoints?.map((point, idx) => (
+                  <li key={idx}>
+                    <Typography variant="body2">{point}</Typography>
+                  </li>
+                ))}
+              </ul>
+              <Typography variant="caption" color="textSecondary" display="block" mt={2}>
+                Generated at: {new Date(summaryDialogData.generatedAt).toLocaleString()}
+              </Typography>
+            </>
+          ) : (
+            <Box sx={{ textAlign: "center", py: 2 }}>
+              <Typography variant="body1" gutterBottom>
+                No summary has been generated for this session yet.
+              </Typography>
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+                You can generate one now using the button below.
+              </Typography>
+              <Button
+                variant="contained"
+                onClick={() => {
+                  setSummaryDialogOpen(false);
+                  handleGenerateSummary();
+                }}
+                disabled={generating || !currentSession?.content?.rawText}
+              >
+                {generating ? "Generating..." : "Generate Summary"}
+              </Button>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSummaryDialogOpen(false)} variant="contained">
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Global dialog for summaries / answers */}
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
