@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { motion } from "framer-motion"; // ✅ import motion
 import { GraduationCap, Briefcase, Award } from "lucide-react";
 
 const initialMentors = [

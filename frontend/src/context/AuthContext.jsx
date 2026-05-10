@@ -1,14 +1,7 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { getMe, login as loginApi, register as registerApi, logout as logoutApi } from '../services/api';
 import toast from 'react-hot-toast';
-
-const AuthContext = createContext();
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within AuthProvider');
-  return context;
-};
+import { AuthContext } from './AuthContextType';
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);

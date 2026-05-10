@@ -1,6 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";  // ✅ Fixed import
+import { useAuth } from "../hooks/useAuth";
 import {
   Brain,
   Calendar,
@@ -18,7 +18,7 @@ import {
 
 const Home = () => {
   const navigate = useNavigate();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated } = useAuth();
 
   const features = [
     {

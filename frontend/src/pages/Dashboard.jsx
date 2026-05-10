@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { getDashboard, completeGoal } from "../services/api";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../hooks/useAuth";
 import { 
   TrendingUp, 
   Award, 

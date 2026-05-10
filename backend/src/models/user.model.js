@@ -1,8 +1,5 @@
 const mongoose = require('mongoose');
 
-
-
-
 const userSchema = new mongoose.Schema({
     username: {
         type: String,
@@ -22,7 +19,12 @@ const userSchema = new mongoose.Schema({
         firstName: { type: String, required: true },
         lastName: { type: String, required: true }
     },
-})
+    calendarTokens: {
+        accessToken: String,
+        refreshToken: String,
+        expiryDate: Date,
+    },
+}, { timestamps: true })
 
 const userModel = mongoose.model('user', userSchema);
 

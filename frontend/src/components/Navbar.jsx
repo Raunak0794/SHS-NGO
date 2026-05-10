@@ -14,7 +14,7 @@ import {
   FaSignInAlt,
   FaUserPlus
 } from "react-icons/fa";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../hooks/useAuth";
 
 const Navbar = () => {
   const navigate = useNavigate();
@@ -48,7 +48,7 @@ const Navbar = () => {
               <FaGraduationCap className="text-white text-xl" />
             </div>
             <span className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-              SHS NGO
+              SHS AI
             </span>
           </Link>
 
