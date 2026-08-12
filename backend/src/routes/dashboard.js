@@ -30,6 +30,8 @@ router.get("/", async (req, res) => {
     res.json({
       nextGoal: goals.find(g => !g.completed) || null,
       weeklyProgress: progress,
+      completedCount: completed,
+      totalGoals: goals.length,
       badges: progress >= 100 ? ["Consistency Star", "Goal Crusher"] : ["Getting Started"]
     });
   } catch (error) {
@@ -45,7 +47,7 @@ router.post("/goals/:id/complete", async (req, res) => {
     const goal = await Goal.findOneAndUpdate(
       { _id: req.params.id, userId },
       { completed: true },
-      { new: true }
+      { returnDocument: "after" }
     );
 
     if (!goal) {

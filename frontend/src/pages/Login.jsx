@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { User, Lock, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
+import { BACKEND_ORIGIN } from "../services/api";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -31,11 +32,8 @@ export default function Login() {
   };
 
   const handleGoogleLogin = () => {
-  window.open(
-    "https://shs-ngo-backend.onrender.com/auth/google",
-    "_self"
-  );
-};
+    window.open(`${BACKEND_ORIGIN}/auth/google`, "_self");
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-4">

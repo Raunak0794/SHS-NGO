@@ -1,5 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getMe, login as loginApi, register as registerApi, logout as logoutApi } from '../services/api';
+import {
+  getAuthToken,
+  getMe,
+  login as loginApi,
+  register as registerApi,
+  logout as logoutApi,
+  setAuthToken,
+} from '../services/api';
 import toast from 'react-hot-toast';
 import { AuthContext } from './AuthContextType';
 
@@ -13,6 +20,9 @@ export const AuthProvider = ({ children }) => {
       setUser(response.data.user);
       return response.data.user;
     } catch (error) {
+      if (error.response?.status !== 401) {
+        console.error('Failed to fetch user', error);
+      }
       setUser(null);
       throw error;
     } finally {
@@ -21,16 +31,30 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
+    const token = getAuthToken();
+    if (!token) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+
     fetchUser().catch(() => {});
   }, [fetchUser]);
 
   const login = async (identifier, password) => {
     setLoading(true);
+    setUser(null);
     try {
-      await loginApi({ username: identifier, email: identifier, password });
-      const userData = await fetchUser();
+      const response = await loginApi({ identifier, password });
+      const userData = response.data?.user || null;
+      const authToken = response.data?.token || null;
+      setAuthToken(authToken);
+      if (userData) {
+        setUser(userData);
+      }
+      const freshUser = await fetchUser().catch(() => userData);
       toast.success('Login successful!');
-      return { success: true, user: userData };
+      return { success: true, user: freshUser || userData };
     } catch (error) {
       const message = error.response?.data?.message || 'Login failed';
       toast.error(message);
@@ -42,16 +66,23 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (username, email, password, firstName, lastName) => {
     setLoading(true);
+    setUser(null);
     try {
-      await registerApi({
+      const response = await registerApi({
         username,
         email,
         password,
         fullName: { firstName, lastName }
       });
-      const userData = await fetchUser();
+      const userData = response.data?.user || null;
+      const authToken = response.data?.token || null;
+      setAuthToken(authToken);
+      if (userData) {
+        setUser(userData);
+      }
+      const freshUser = await fetchUser().catch(() => userData);
       toast.success('Registration successful!');
-      return { success: true, user: userData };
+      return { success: true, user: freshUser || userData };
     } catch (error) {
       const message = error.response?.data?.message || 'Registration failed';
       toast.error(message);
@@ -64,6 +95,7 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       await logoutApi();
+      setAuthToken(null);
       setUser(null);
       toast.success('Logged out successfully');
     } catch (error) {

@@ -7,9 +7,13 @@ function getOAuth2Client(tokens) {
   const oAuth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
+    process.env.GOOGLE_CALENDAR_REDIRECT_URI || process.env.GOOGLE_REDIRECT_URI
   );
-  oAuth2Client.setCredentials(tokens);
+  oAuth2Client.setCredentials({
+    access_token: tokens.access_token || tokens.accessToken,
+    refresh_token: tokens.refresh_token || tokens.refreshToken,
+    expiry_date: tokens.expiry_date || tokens.expiryDate?.getTime?.() || tokens.expiryDate,
+  });
   return oAuth2Client;
 }
 

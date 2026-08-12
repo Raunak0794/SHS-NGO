@@ -31,7 +31,7 @@ function App() {
         <Route path="/login" element={!isAuthenticated ? <Login /> : <Navigate to="/" />} />
         <Route path="/register" element={!isAuthenticated ? <Register /> : <Navigate to="/" />} />
         <Route path="/auth/google/success" element={<GoogleSuccess />} />
-        <Route path="/" element={isAuthenticated ? <Home /> : <Navigate to="/login" />} />
+        <Route path="/" element={<Home />} />
         <Route path="/dashboard" element={isAuthenticated ? <Dashboard /> : <Navigate to="/login" />} />
         <Route path="/studysphereai" element={isAuthenticated ? <AIDashboard /> : <Navigate to="/login" />} />
         <Route path="/weekly-reviews" element={isAuthenticated ? <WeeklyReviewPage /> : <Navigate to="/login" />} />

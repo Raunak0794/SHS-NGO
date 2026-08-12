@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { User, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
+import { BACKEND_ORIGIN } from "../services/api";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -42,7 +43,7 @@ export default function Register() {
   };
 
   const handleGoogleLogin = () => {
-    window.open("http://localhost:3000/auth/google", "_self");
+    window.open(`${BACKEND_ORIGIN}/auth/google`, "_self");
   };
 
   return (

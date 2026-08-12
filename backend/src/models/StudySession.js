@@ -17,6 +17,7 @@ const studySessionSchema = new mongoose.Schema(
       originalName: String,
       uploadDate: Date,
       fileType: String, // pdf, txt, md, etc
+      size: Number,
     },
     content: {
       rawText: String,

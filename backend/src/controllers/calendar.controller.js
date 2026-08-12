@@ -26,17 +26,20 @@ const syncMicroGoalToCalendar = async (req, res) => {
     }
 
     // Get micro-goal
-    const microGoal = await MicroGoal.findById(microGoalId);
+    const microGoal = await MicroGoal.findOne({ _id: microGoalId, userId });
     if (!microGoal) {
       return res.status(404).json({ message: "Micro-goal not found" });
     }
 
-    // Create calendar event
-    const calendarEvent = await createCalendarEvent(user.calendarTokens, {
+    const eventData = {
       title: title || microGoal.title,
       description: description || microGoal.description,
       deadline: deadline || microGoal.deadline,
-    });
+    };
+
+    const calendarEvent = microGoal.calendarEventId
+      ? await updateCalendarEvent(user.calendarTokens, microGoal.calendarEventId, eventData)
+      : await createCalendarEvent(user.calendarTokens, eventData);
 
     // Update micro-goal with calendar event ID
     microGoal.calendarEventId = calendarEvent.id;
@@ -72,7 +75,7 @@ const removeMicroGoalFromCalendar = async (req, res) => {
     }
 
     // Get micro-goal
-    const microGoal = await MicroGoal.findById(microGoalId);
+    const microGoal = await MicroGoal.findOne({ _id: microGoalId, userId });
     if (!microGoal) {
       return res.status(404).json({ message: "Micro-goal not found" });
     }

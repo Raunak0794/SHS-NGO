@@ -128,7 +128,13 @@ function AIDashboard() {
         numQuestions: 5,
         difficulty: "intermediate",
       });
-      const updatedSession = { ...currentSession, practiceQuestions: res.data.questions };
+      const updatedSession = {
+        ...currentSession,
+        practiceQuestions: res.data.allQuestions || [
+          ...(currentSession.practiceQuestions || []),
+          ...(res.data.questions || []),
+        ],
+      };
       updateSessionInState(updatedSession);
       setTabValue(2);
       setError(null);
@@ -202,6 +208,11 @@ function AIDashboard() {
   // File upload handler
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
+    await uploadFile(file);
+    e.target.value = "";
+  };
+
+  const uploadFile = async (file) => {
     if (!file) return;
 
     setSelectedFile(file);
@@ -213,9 +224,7 @@ function AIDashboard() {
     }
 
     try {
-      const res = await apiClient.post("/study/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const res = await apiClient.post("/study/upload", formData);
       updateSessionInState(res.data.studySession);
       setError(null);
     } catch (err) {
@@ -223,7 +232,6 @@ function AIDashboard() {
     } finally {
       setUploadingFile(false);
       setSelectedFile(null);
-      e.target.value = "";
     }
   };
 
@@ -249,7 +257,7 @@ function AIDashboard() {
       )}
 
       <Paper sx={{ mb: 3 }}>
-        <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)}>
+        <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)} variant="scrollable" scrollButtons="auto">
           <Tab label="📁 My Sessions" />
           <Tab label="📝 Upload & Summarize" />
           <Tab label="❓ Practice Questions" />
@@ -365,6 +373,11 @@ function AIDashboard() {
                 </Typography>
                 <Box
                   component="label"
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    uploadFile(event.dataTransfer.files?.[0]);
+                  }}
                   sx={{
                     border: "2px dashed #1976d2",
                     borderRadius: 2,
@@ -378,13 +391,13 @@ function AIDashboard() {
                   <CloudUpload size={40} color="#1976d2" />
                   <Typography mt={2}>Drag and drop your file or click to browse</Typography>
                   <Typography variant="caption" color="gray">
-                    Supported: TXT, MD, CSV, JSON, JS, HTML, CSS, XML, LOG (Max 10MB)
+                    Supported: TXT, MD, CSV, JSON, JS, HTML, CSS, XML, LOG, PDF, DOC, DOCX, JPG, PNG, GIF, WEBP (Max 50MB)
                   </Typography>
                   <input
                     type="file"
                     hidden
                     onChange={handleFileUpload}
-                    accept=".txt,.md,.csv,.json,.js,.html,.css,.xml,.log"
+                    accept=".txt,.md,.csv,.json,.js,.html,.css,.xml,.log,.pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp"
                   />
                 </Box>
                 {uploadingFile && (

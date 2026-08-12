@@ -1,9 +1,7 @@
 const MicroGoal = require("../models/MicroGoal");
 const Goal = require("../models/Goal");
 const WeeklyReview = require("../models/WeeklyReview");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const { callGemini, parseJSONFromText } = require("../utils/gemini");
 
 /* ============ GENERATE MICRO-GOALS FROM MAIN GOAL ============ */
 const generateMicroGoals = async (req, res) => {
@@ -22,7 +20,10 @@ const generateMicroGoals = async (req, res) => {
     }
 
     // Generate micro-goals using Gemini
-    const microGoals = await generateMicroGoalsAI(mainGoal, numMicroGoals);
+    let microGoals = await generateMicroGoalsAI(mainGoal, numMicroGoals);
+    if (!microGoals.length) {
+      microGoals = generateFallbackMicroGoals(mainGoal, numMicroGoals);
+    }
 
     if (!microGoals.length) {
       return res.status(500).json({ error: "Failed to generate micro-goals" });
@@ -106,9 +107,9 @@ const updateMicroGoal = async (req, res) => {
 
     // Update fields
     if (status) microGoal.status = status;
-    if (actualHours) microGoal.actualHours = actualHours;
-    if (feedback) microGoal.feedback = feedback;
-    if (subtasks) microGoal.subtasks = subtasks;
+    if (actualHours !== undefined) microGoal.actualHours = actualHours;
+    if (feedback !== undefined) microGoal.feedback = feedback;
+    if (subtasks) microGoal.subtasks = normalizeSubtasks(subtasks);
 
     // If completed, mark completion time
     if (status === "completed" && !microGoal.completedAt) {
@@ -296,8 +297,6 @@ const getWeeklyReviews = async (req, res) => {
 
 async function generateMicroGoalsAI(mainGoal, numMicroGoals) {
   try {
-   const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
     const prompt = `Break down this learning goal into ${numMicroGoals} specific, achievable micro-goals:
 
 Goal: ${mainGoal.title}
@@ -325,16 +324,10 @@ Format as JSON array:
 
 Ensure each micro-goal has concrete subtasks and relevant resources.`;
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
-
-    const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      return parsed.map((mg) => ({
-        ...mg,
-        deadline: new Date(Date.now() + mg.deadline * 24 * 60 * 60 * 1000),
-      }));
+    const responseText = await callGemini(prompt);
+    const parsed = parseJSONFromText(responseText, []);
+    if (Array.isArray(parsed)) {
+      return parsed.map((mg, index) => normalizeMicroGoal(mg, mainGoal, index));
     }
 
     return [];
@@ -344,6 +337,54 @@ Ensure each micro-goal has concrete subtasks and relevant resources.`;
   }
 }
 
+function normalizeSubtasks(subtasks) {
+  if (!Array.isArray(subtasks)) return [];
+  return subtasks.map((subtask) => {
+    if (typeof subtask === "string") {
+      return { title: subtask, completed: false };
+    }
+    return {
+      title: subtask.title || subtask.name || "Subtask",
+      completed: Boolean(subtask.completed),
+      completedAt: subtask.completedAt,
+    };
+  });
+}
+
+function normalizeMicroGoal(mg, mainGoal, index) {
+  const deadlineDays = Number(mg.deadline);
+  const deadline = Number.isFinite(deadlineDays)
+    ? new Date(Date.now() + Math.max(1, deadlineDays) * 24 * 60 * 60 * 1000)
+    : new Date(Date.now() + (index + 1) * 24 * 60 * 60 * 1000);
+
+  return {
+    title: mg.title || `${mainGoal.title} - Step ${index + 1}`,
+    description: mg.description || `Progress on ${mainGoal.title}`,
+    priority: ["low", "medium", "high"].includes(mg.priority) ? mg.priority : "medium",
+    estimatedHours: Number(mg.estimatedHours) || 1,
+    subtasks: normalizeSubtasks(mg.subtasks || []),
+    resources: Array.isArray(mg.resources) ? mg.resources : [],
+    deadline,
+  };
+}
+
+function generateFallbackMicroGoals(mainGoal, numMicroGoals) {
+  const count = Math.min(Math.max(Number(numMicroGoals) || 5, 1), 10);
+  const steps = ["Research", "Practice", "Build", "Review", "Assess", "Improve", "Finalize", "Share", "Reflect", "Plan"];
+  return Array.from({ length: count }, (_, index) => ({
+    title: `${steps[index] || "Continue"}: ${mainGoal.title}`,
+    description: `Complete a focused ${steps[index]?.toLowerCase() || "learning"} session for ${mainGoal.title}.`,
+    priority: index < 2 ? "high" : "medium",
+    estimatedHours: 1,
+    subtasks: [
+      { title: `Study ${mainGoal.title} for 25 minutes`, completed: false },
+      { title: "Write down three takeaways", completed: false },
+    ],
+    resources: [],
+    deadline: new Date(Date.now() + (index + 1) * 24 * 60 * 60 * 1000),
+  }));
+}
+
 async function generateWeeklySummaryAI(
   goals,
   completedMicroGoals,
@@ -351,8 +392,6 @@ async function generateWeeklySummaryAI(
   hoursSpent
 ) {
   try {
-   const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
     const prompt = `Generate a weekly learning review summary based on this data:
 
 Goals being tracked: ${goals.map((g) => g.title).join(", ")}
@@ -376,12 +415,9 @@ Format as JSON:
   "nextWeekGoals": ["...", "..."]
 }`;
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
-
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
+    const responseText = await callGemini(prompt);
+    const parsed = parseJSONFromText(responseText);
+    if (parsed) {
       return {
         summary: parsed.summary || "Great week of learning!",
         achievements: parsed.achievements || [],

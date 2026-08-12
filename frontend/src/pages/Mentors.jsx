@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { GraduationCap, Briefcase, Award } from "lucide-react";
+import { motion } from "framer-motion";
 
 const initialMentors = [
   {
@@ -76,6 +77,17 @@ const initialMentors = [
   },
 ];
 
+function getInitials(name) {
+  return name
+    .replace(/\([^)]*\)/g, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+}
+
 export default function Mentors() {
   const [mentors] = useState(initialMentors);
 
@@ -108,7 +120,7 @@ export default function Mentors() {
               {/* Avatar / Icon */}
               <div className="flex justify-center mb-4">
                 <div className="w-24 h-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-4xl shadow-lg group-hover:scale-110 transition-transform duration-300">
-                  <span>{mentor.icon}</span>
+                  <span className="text-white text-2xl font-bold">{getInitials(mentor.name)}</span>
                 </div>
               </div>
 

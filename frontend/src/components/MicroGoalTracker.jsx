@@ -18,6 +18,7 @@ const MicroGoalTracker = ({ goalId, onUpdate }) => {
   const [loading, setLoading] = useState(true);
   const [selectedGoal, setSelectedGoal] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [calendarStatus, setCalendarStatus] = useState("");
 
   const fetchMicroGoals = useCallback(async () => {
     if (!goalId) return;
@@ -49,6 +50,52 @@ const MicroGoalTracker = ({ goalId, onUpdate }) => {
       }
     } catch (error) {
       console.error("Error updating micro-goal:", error);
+    }
+  };
+
+  const connectCalendar = async () => {
+    try {
+      setCalendarStatus("Opening Google Calendar authorization...");
+      const res = await apiClient.get("/auth/google/url");
+      if (res.data?.url) {
+        window.location.href = res.data.url;
+        return;
+      }
+      setCalendarStatus("Could not start Google Calendar authorization.");
+    } catch (error) {
+      setCalendarStatus(error.response?.data?.message || "Could not connect Google Calendar.");
+    }
+  };
+
+  const syncAllToCalendar = async () => {
+    try {
+      setCalendarStatus("Syncing micro-goals to Google Calendar...");
+      const res = await apiClient.post("/calendar/sync-all");
+      setCalendarStatus(res.data?.message || "Calendar sync complete.");
+      await fetchMicroGoals();
+    } catch (error) {
+      setCalendarStatus(error.response?.data?.message || "Calendar sync failed.");
+    }
+  };
+
+  const syncGoalToCalendar = async (microGoal) => {
+    try {
+      setCalendarStatus("Syncing selected micro-goal...");
+      const res = await apiClient.post("/calendar/sync-microgoal", {
+        microGoalId: microGoal._id,
+        deadline: microGoal.deadline,
+        title: microGoal.title,
+        description: microGoal.description,
+      });
+      setCalendarStatus(res.data?.message || "Micro-goal synced to Google Calendar.");
+      if (res.data?.microGoal) {
+        setSelectedGoal(res.data.microGoal);
+        setMicroGoals((prev) =>
+          prev.map((mg) => (mg._id === microGoal._id ? res.data.microGoal : mg))
+        );
+      }
+    } catch (error) {
+      setCalendarStatus(error.response?.data?.message || "Micro-goal calendar sync failed.");
     }
   };
 
@@ -90,13 +137,32 @@ const MicroGoalTracker = ({ goalId, onUpdate }) => {
       <div className="glass-card p-5">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
           <h3 className="text-xl font-semibold text-gray-800">📋 Micro-Goals ({microGoals.length})</h3>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="w-32 bg-gray-200 rounded-full h-2">
               <div className="bg-indigo-600 h-2 rounded-full transition-all" style={{ width: `${progress}%` }}></div>
             </div>
             <span className="text-sm font-medium text-gray-700">{progress}% Complete</span>
+            <button
+              type="button"
+              onClick={connectCalendar}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-50"
+            >
+              <Calendar className="w-4 h-4" />
+              Connect
+            </button>
+            <button
+              type="button"
+              onClick={syncAllToCalendar}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+            >
+              <Calendar className="w-4 h-4" />
+              Sync All
+            </button>
           </div>
         </div>
+        {calendarStatus && (
+          <p className="text-sm text-gray-600">{calendarStatus}</p>
+        )}
       </div>
 
       {/* List */}
@@ -177,6 +243,14 @@ const MicroGoalTracker = ({ goalId, onUpdate }) => {
             <div className="p-6 space-y-6">
               {/* Description */}
               <p className="text-gray-700">{selectedGoal.description}</p>
+              <button
+                type="button"
+                onClick={() => syncGoalToCalendar(selectedGoal)}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              >
+                <Calendar className="w-4 h-4" />
+                {selectedGoal.calendarEventId ? "Update Calendar Event" : "Sync to Calendar"}
+              </button>
 
               {/* Subtasks */}
               {selectedGoal.subtasks?.length > 0 && (

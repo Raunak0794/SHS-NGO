@@ -2,16 +2,20 @@ const express = require("express");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
 const authMiddleware = require("../middleware/auth");
 const studyController = require("../controllers/study.controller");
 
 const router = express.Router();
 
 // Ensure uploads directory exists (inside src/uploads as per structure)
-const uploadDir = path.join(__dirname, "../uploads");
+const uploadDir = process.env.UPLOAD_DIR || path.join(os.tmpdir(), "shs-uploads");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
+
+const MAX_UPLOAD_SIZE_MB = Number(process.env.MAX_UPLOAD_SIZE_MB || 200);
+const MAX_UPLOAD_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024;
 
 // Configure multer for file upload
 const storage = multer.diskStorage({
@@ -27,17 +31,49 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
-    const allowedTypes = /txt|md|json|pdf|doc|docx/i;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
+    const allowedExt = new Set([
+      ".txt",
+      ".md",
+      ".json",
+      ".js",
+      ".html",
+      ".css",
+      ".csv",
+      ".xml",
+      ".log",
+      ".pdf",
+      ".doc",
+      ".docx",
+      ".ppt",
+      ".pptx",
+      ".xls",
+      ".xlsx",
+      ".odt",
+      ".ods",
+      ".jpg",
+      ".jpeg",
+      ".png",
+      ".gif",
+      ".webp",
+      ".svg",
+      ".zip",
+      ".rar",
+      ".7z",
+      ".mp3",
+      ".mp4",
+      ".mov",
+      ".avi",
+      ".wav",
+    ]);
 
-    if (mimetype && extname) {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowedExt.has(ext) || !ext) {
       return cb(null, true);
-    } else {
-      cb(new Error("Only .txt, .md, .json, .pdf, .doc, .docx files are allowed"));
     }
+
+    cb(new Error("Unsupported file type"));
   },
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  limits: { fileSize: MAX_UPLOAD_SIZE },
 });
 
 // All routes require authentication (applied before all routes)
@@ -64,7 +100,7 @@ router.put("/:sessionId/progress", studyController.updateLearningPathProgress);
 router.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     if (error.code === "FILE_TOO_LARGE") {
-      return res.status(400).json({ error: "File too large. Max size 50MB." });
+      return res.status(400).json({ error: `File too large. Max size ${MAX_UPLOAD_SIZE_MB}MB.` });
     }
     return res.status(400).json({ error: error.message });
   }

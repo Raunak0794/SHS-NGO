@@ -40,20 +40,25 @@ const registerUserValidations = [
 ]
 
 const loginUserValidations = [
+    body('identifier')
+        .optional({ values: 'falsy' })
+        .isString()
+        .withMessage('Identifier must be a string'),
     body('email')
-        .optional()
-        .isEmail()
-        .withMessage('Invalid email address'),
+        .optional({ values: 'falsy' })
+        .isString()
+        .withMessage('Email must be a string'),
     body('username')
-        .optional()
+        .optional({ values: 'falsy' })
         .isString()
         .withMessage('Username must be a string'),
     body('password')
         .isLength({ min: 6 })
         .withMessage('Password must be at least 6 characters long'),
     (req, res, next) => {
-        if (!req.body.email && !req.body.username) {
-            return res.status(400).json({ errors: [ { msg: 'Either email or username is required' } ] });
+        const hasIdentifier = Boolean(req.body.identifier || req.body.email || req.body.username);
+        if (!hasIdentifier) {
+            return res.status(400).json({ errors: [ { msg: 'Either email, username, or identifier is required' } ] });
         }
         respondWithValidationErrors(req, res, next);
     }

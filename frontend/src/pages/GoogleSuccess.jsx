@@ -4,7 +4,7 @@ import { useAuth } from "../hooks/useAuth";
 
 export default function GoogleSuccess() {
   const navigate = useNavigate();
-  const { fetchUser, isAuthenticated } = useAuth();
+  const { fetchUser } = useAuth();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -17,11 +17,6 @@ export default function GoogleSuccess() {
       .then(() => navigate("/"))
       .catch(() => navigate("/login"));
   }, [navigate, fetchUser]);
-
-  if (isAuthenticated) {
-    navigate("/");
-    return null;
-  }
 
   return (
     <div className="min-h-screen flex items-center justify-center">

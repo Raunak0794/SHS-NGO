@@ -1,11 +1,67 @@
 import axios from "axios";
 
-const API = "https://shs-ngo-backend.onrender.com/api";
+const AUTH_TOKEN_STORAGE_KEY = "shs_auth_token";
+
+export const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.DEV ? "/api" : "https://shs-ngo-backend.onrender.com/api");
+
+export const BACKEND_ORIGIN = API_BASE_URL.startsWith("http")
+  ? API_BASE_URL.replace(/\/api\/?$/, "")
+  : import.meta.env.VITE_BACKEND_URL || "http://localhost:3000";
 
 export const apiClient = axios.create({
-  baseURL: API,
-  headers: { "Content-Type": "application/json" },
+  baseURL: API_BASE_URL,
   withCredentials: true,
+});
+
+export const getAuthToken = () => {
+  try {
+    if (typeof window !== "undefined") {
+      const storedToken = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+      if (storedToken) {
+        return storedToken;
+      }
+
+      const token = document.cookie
+        .split('; ')
+        .find((row) => row.startsWith('token='))
+        ?.split('=')[1];
+
+      return token ? decodeURIComponent(token) : null;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+};
+
+export const setAuthToken = (token) => {
+  if (typeof window === "undefined") return;
+  if (token) {
+    window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+  } else {
+    window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  }
+};
+
+apiClient.interceptors.request.use((config) => {
+  const token = getAuthToken();
+  const headers = config.headers || {};
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  if (!(config.data instanceof FormData)) {
+    headers["Content-Type"] = headers["Content-Type"] || "application/json";
+  } else {
+    delete headers["Content-Type"];
+  }
+
+  config.headers = headers;
+  return config;
 });
 
 apiClient.interceptors.response.use(
@@ -13,7 +69,6 @@ apiClient.interceptors.response.use(
   (error) => {
     const isLoginPage = window.location.pathname.includes("/login");
     const isRegisterPage = window.location.pathname.includes("/register");
-
     const isAuthRequest =
       error.config?.url?.includes("/auth/login") ||
       error.config?.url?.includes("/auth/register");
@@ -22,7 +77,8 @@ apiClient.interceptors.response.use(
       error.response?.status === 401 &&
       !isLoginPage &&
       !isRegisterPage &&
-      !isAuthRequest
+      !isAuthRequest &&
+      !error.config?.headers?.["Content-Type"]?.includes("multipart/form-data")
     ) {
       window.location.href = "/login";
     }
@@ -33,7 +89,17 @@ apiClient.interceptors.response.use(
 
 // ================= AUTH ENDPOINTS =================
 export const register = (userData) => apiClient.post("/auth/register", userData);
-export const login = (credentials) => apiClient.post("/auth/login", credentials);
+export const login = (credentials) => {
+  const payload = credentials?.identifier
+    ? { identifier: credentials.identifier, password: credentials.password }
+    : {
+        username: credentials?.username,
+        email: credentials?.email,
+        password: credentials?.password,
+      };
+
+  return apiClient.post("/auth/login", payload);
+};
 export const logout = () => apiClient.post("/auth/logout");
 export const getMe = () => apiClient.get("/auth/me");
 
@@ -43,10 +109,7 @@ export const completeGoal = (id) => apiClient.post(`/dashboard/goals/${id}/compl
 
 // ================= AI =================
 export const getAIDashboard = () => apiClient.get("/ai/dashboard");
-export const uploadMaterial = (formData) =>
-  apiClient.post("/ai/upload", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+export const uploadMaterial = (formData) => apiClient.post("/ai/upload", formData);
 
 // ================= MICRO-GOALS =================
 export const generateMicroGoals = (goalId, numMicroGoals = 5) =>
@@ -66,10 +129,7 @@ export const getWeeklyReviews = () => apiClient.get("/microgoals/weekly-review/a
 export const createStudySession = (data) => apiClient.post("/study/create", data);
 export const getAllStudySessions = () => apiClient.get("/study/sessions");
 export const getStudySession = (sessionId) => apiClient.get(`/study/${sessionId}`);
-export const uploadStudyMaterial = (formData) =>
-  apiClient.post("/study/upload", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+export const uploadStudyMaterial = (formData) => apiClient.post("/study/upload", formData);
 export const generateSummary = (sessionId) => apiClient.post(`/study/${sessionId}/summary`);
 export const generateQuestions = (sessionId, numQuestions = 5, difficulty = "intermediate") =>
   apiClient.post(`/study/${sessionId}/questions`, { numQuestions, difficulty });

@@ -15,7 +15,14 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
-    // Remove minify: 'terser' or change to 'esbuild' (default)
-    // minify: 'esbuild', // This is the default, no need to specify
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          mui: ['@mui/material', '@mui/icons-material', '@emotion/react', '@emotion/styled'],
+          charts: ['chart.js', 'react-chartjs-2'],
+        },
+      },
+    },
   },
 })
