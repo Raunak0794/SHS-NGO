@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const redis = require("../db/redis");
+const { isTokenBlacklisted } = require("../utils/tokenBlacklist");
 
 const getJwtSecret = () => {
   const secret = process.env.JWT_SECRET || "dev-secret-change-me";
@@ -50,15 +50,12 @@ const authMiddleware = async (req, res, next) => {
       return res.status(401).json({ message: "No token provided" });
     }
 
-    if (redis) {
-      try {
-        const isBlacklisted = await redis.get(`blacklist:${token}`);
-        if (isBlacklisted) {
-          return res.status(401).json({ message: "Session has expired" });
-        }
-      } catch (redisErr) {
-        console.warn("Redis blacklist check failed, continuing auth:", redisErr.message);
+    try {
+      if (await isTokenBlacklisted(token)) {
+        return res.status(401).json({ message: "Session has expired" });
       }
+    } catch (redisErr) {
+      console.warn("Redis blacklist check failed, continuing auth:", redisErr.message);
     }
 
     const decoded = jwt.verify(token, getJwtSecret());

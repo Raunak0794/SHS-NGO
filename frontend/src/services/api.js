@@ -1,14 +1,18 @@
 import axios from "axios";
 
 const AUTH_TOKEN_STORAGE_KEY = "shs_auth_token";
+const DEV_BACKEND_ORIGIN = "http://localhost:5000";
+const trimTrailingSlash = (value) => String(value || "").trim().replace(/\/+$/, "");
+const explicitApiUrl = trimTrailingSlash(import.meta.env.VITE_API_URL);
+const explicitBackendUrl = trimTrailingSlash(import.meta.env.VITE_BACKEND_URL);
 
 export const API_BASE_URL =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.DEV ? "/api" : "https://shs-ngo-backend.onrender.com/api");
+  explicitApiUrl ||
+  (import.meta.env.DEV ? `${DEV_BACKEND_ORIGIN}/api` : "/api");
 
 export const BACKEND_ORIGIN = API_BASE_URL.startsWith("http")
   ? API_BASE_URL.replace(/\/api\/?$/, "")
-  : import.meta.env.VITE_BACKEND_URL || "http://localhost:3000";
+  : explicitBackendUrl || (import.meta.env.DEV ? DEV_BACKEND_ORIGIN : window.location.origin);
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -67,11 +71,16 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (typeof window === "undefined") {
+      return Promise.reject(error);
+    }
+
     const isLoginPage = window.location.pathname.includes("/login");
     const isRegisterPage = window.location.pathname.includes("/register");
     const isAuthRequest =
       error.config?.url?.includes("/auth/login") ||
-      error.config?.url?.includes("/auth/register");
+      error.config?.url?.includes("/auth/register") ||
+      error.config?.url?.includes("/auth/me");
 
     if (
       error.response?.status === 401 &&

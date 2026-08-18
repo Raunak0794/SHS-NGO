@@ -4,10 +4,10 @@ const MicroGoal = require("../models/MicroGoal");
 const WeeklyReview = require("../models/WeeklyReview");
 const fs = require("fs");
 const path = require("path");
-const pdfParse = require("pdf-parse");
 const mammoth = require("mammoth");
 const Tesseract = require("tesseract.js");
 const { callGemini, parseJSONFromText } = require("../utils/gemini");
+const { extractTextFromPdf } = require("../utils/pdf");
 
 const MAX_ANALYSIS_CHARS = 2000;
 
@@ -167,8 +167,7 @@ async function analyzeFile(filePath, fileName) {
     if (SUPPORTED_TEXT_EXTENSIONS.has(ext)) {
       fileContent = fs.readFileSync(filePath, "utf-8");
     } else if (ext === ".pdf") {
-      const pdfData = await pdfParse(fs.readFileSync(filePath));
-      fileContent = pdfData.text || "";
+      fileContent = await extractTextFromPdf(fs.readFileSync(filePath));
     } else if (ext === ".docx") {
       const docxData = await mammoth.extractRawText({ path: filePath });
       fileContent = docxData.value || "";

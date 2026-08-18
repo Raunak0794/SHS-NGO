@@ -7,6 +7,16 @@ const {
   listCalendarEvents,
 } = require("../services/calendarService");
 
+function hasCalendarCredentials(user) {
+  const tokens = user?.calendarTokens;
+  return Boolean(
+    tokens?.accessToken ||
+    tokens?.refreshToken ||
+    tokens?.access_token ||
+    tokens?.refresh_token
+  );
+}
+
 // Sync micro-goal with Google Calendar
 const syncMicroGoalToCalendar = async (req, res) => {
   try {
@@ -19,7 +29,7 @@ const syncMicroGoalToCalendar = async (req, res) => {
 
     // Get user's calendar tokens
     const user = await User.findById(userId);
-    if (!user || !user.calendarTokens) {
+    if (!hasCalendarCredentials(user)) {
       return res.status(400).json({
         message: "User not connected to Google Calendar. Please authorize calendar access.",
       });
@@ -68,7 +78,7 @@ const removeMicroGoalFromCalendar = async (req, res) => {
 
     // Get user's calendar tokens
     const user = await User.findById(userId);
-    if (!user || !user.calendarTokens) {
+    if (!hasCalendarCredentials(user)) {
       return res.status(400).json({
         message: "User not connected to Google Calendar",
       });
@@ -110,7 +120,7 @@ const getCalendarEvents = async (req, res) => {
 
     // Get user's calendar tokens
     const user = await User.findById(userId);
-    if (!user || !user.calendarTokens) {
+    if (!hasCalendarCredentials(user)) {
       return res.status(400).json({
         message: "User not connected to Google Calendar",
       });
@@ -139,7 +149,7 @@ const syncAllMicroGoalsToCalendar = async (req, res) => {
 
     // Get user's calendar tokens
     const user = await User.findById(userId);
-    if (!user || !user.calendarTokens) {
+    if (!hasCalendarCredentials(user)) {
       return res.status(400).json({
         message: "User not connected to Google Calendar. Please authorize calendar access.",
       });

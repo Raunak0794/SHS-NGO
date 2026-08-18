@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { getDashboard, completeGoal } from "../services/api";
 import { useAuth } from "../hooks/useAuth";
+import toast from "react-hot-toast";
 import { 
   TrendingUp, 
   Award, 
@@ -52,7 +53,7 @@ const Dashboard = () => {
       await load();
     } catch (err) {
       console.error("Complete goal error:", err);
-      alert("Could not complete goal. Please try again.");
+      toast.error("Could not complete goal. Please try again.");
     } finally {
       setCompletingId(null);
     }

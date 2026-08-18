@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { GraduationCap, Briefcase, Award } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion as Motion } from "framer-motion";
+import toast from "react-hot-toast";
 
 const initialMentors = [
   {
@@ -109,7 +110,7 @@ export default function Mentors() {
         {/* Mentor Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
           {mentors.map((mentor) => (
-            <motion.div
+            <Motion.div
               key={mentor.id}
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
@@ -141,7 +142,7 @@ export default function Mentors() {
                 {/* Decorative line */}
                 <div className="w-12 h-0.5 bg-gradient-to-r from-indigo-400 to-purple-400 mx-auto mt-4 rounded-full"></div>
               </div>
-            </motion.div>
+            </Motion.div>
           ))}
         </div>
 
@@ -152,7 +153,10 @@ export default function Mentors() {
             <p className="text-gray-600 mb-4">
               Join our community of educators and help shape the future of learning.
             </p>
-            <button className="btn-primary inline-flex items-center gap-2">
+            <button
+              onClick={() => toast("Mentor applications will open soon.")}
+              className="btn-primary inline-flex items-center gap-2"
+            >
               <Award className="w-4 h-4" />
               Apply Now
             </button>

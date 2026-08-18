@@ -118,6 +118,8 @@ const Navbar = () => {
           {isAuthenticated && (
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              aria-label={isMobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+              aria-expanded={isMobileMenuOpen}
               className="md:hidden p-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors"
             >
               {isMobileMenuOpen ? <FaTimes size={20} /> : <FaBars size={20} />}

@@ -1,64 +1,209 @@
-import Groq from "groq-sdk";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+const Groq = require("groq-sdk");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GROQ_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
+const AI_PROVIDER = String(process.env.AI_PROVIDER || "gemini").trim().toLowerCase();
+const AI_REQUEST_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS || 15000);
 
-const groq = new Groq({
-    apiKey: process.env.GROQ_API_KEY,
-});
+function normalizeTextResponse(value) {
+  if (typeof value === "string") {
+    return value.trim();
+  }
 
-export async function generateAIResponse(prompt) {
-    // Try Gemini first
-    try {
-        console.log("🤖 Trying Gemini...");
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeTextResponse(item)).filter(Boolean).join("\n").trim();
+  }
 
-        const model = gemini.getGenerativeModel({
-            model: "gemini-2.5-flash",
-        });
-
-        const result = await model.generateContent(prompt);
-
-        console.log("✅ Gemini succeeded");
-
-        return result.response.text();
-
-    } catch (geminiError) {
-        console.error("❌ Gemini failed:", geminiError.message);
-
-        // Gemini quota/rate limit
-        const isGeminiLimit =
-            geminiError.status === 429 ||
-            geminiError.statusCode === 429 ||
-            geminiError.message?.toLowerCase().includes("quota") ||
-            geminiError.message?.toLowerCase().includes("too many requests") ||
-            geminiError.message?.includes("RESOURCE_EXHAUSTED");
-
-        if (!isGeminiLimit) {
-            throw geminiError;
-        }
-
-        console.log("⚠️ Gemini limit reached → switching to Groq...");
-
-        // Try Groq
-        try {
-            const completion = await groq.chat.completions.create({
-                model: "llama-3.3-70b-versatile",
-                messages: [
-                    {
-                        role: "user",
-                        content: prompt,
-                    },
-                ],
-            });
-
-            console.log("✅ Groq succeeded");
-
-            return completion.choices[0].message.content;
-
-        } catch (groqError) {
-            console.error("❌ Groq also failed:", groqError.message);
-
-            throw groqError;
-        }
+  if (value && typeof value === "object") {
+    if (typeof value.text === "function") {
+      return normalizeTextResponse(value.text());
     }
+
+    if (typeof value.output_text === "string") {
+      return value.output_text.trim();
+    }
+  }
+
+  return "";
 }
+
+function tryParseJSON(text, fallback = null) {
+  const source = String(text || "").trim();
+  if (!source) return fallback;
+
+  try {
+    return JSON.parse(source);
+  } catch {
+    return fallback;
+  }
+}
+
+function extractJSONBlock(text, openingChar) {
+  const source = String(text || "");
+  const closingChar = openingChar === "[" ? "]" : "}";
+  const startIndex = source.indexOf(openingChar);
+
+  if (startIndex === -1) {
+    return null;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = startIndex; index < source.length; index += 1) {
+    const char = source[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === openingChar) {
+      depth += 1;
+    } else if (char === closingChar) {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(startIndex, index + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+function parseJSONFromText(text, fallback = null) {
+  const source = String(text || "").trim();
+  const direct = tryParseJSON(source, null);
+  if (direct !== null) {
+    return direct;
+  }
+
+  const objectBlock = extractJSONBlock(source, "{");
+  if (objectBlock) {
+    const parsedObject = tryParseJSON(objectBlock, null);
+    if (parsedObject !== null) {
+      return parsedObject;
+    }
+  }
+
+  const arrayBlock = extractJSONBlock(source, "[");
+  if (arrayBlock) {
+    const parsedArray = tryParseJSON(arrayBlock, null);
+    if (parsedArray !== null) {
+      return parsedArray;
+    }
+  }
+
+  return fallback;
+}
+
+function parseJSONArrayFromText(text) {
+  const parsed = parseJSONFromText(text, []);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+function canUseGemini() {
+  return Boolean(process.env.GEMINI_API_KEY);
+}
+
+function canUseGroq() {
+  return Boolean(process.env.GROQ_API_KEY);
+}
+
+async function withTimeout(promise, provider) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error(`${provider} timed out after ${AI_REQUEST_TIMEOUT_MS}ms.`)),
+      AI_REQUEST_TIMEOUT_MS
+    );
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function callGeminiProvider(prompt) {
+  const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  const model = gemini.getGenerativeModel({ model: GEMINI_MODEL });
+  const result = await withTimeout(model.generateContent(prompt), "Gemini");
+  return normalizeTextResponse(result?.response);
+}
+
+async function callGroqProvider(prompt) {
+  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  const completion = await withTimeout(
+    groq.chat.completions.create({
+      model: GROQ_MODEL,
+      temperature: 0.3,
+      messages: [{ role: "user", content: prompt }],
+    }),
+    "Groq"
+  );
+  return normalizeTextResponse(completion?.choices?.[0]?.message?.content);
+}
+
+async function callGemini(prompt) {
+  const cleanPrompt = String(prompt || "").trim();
+
+  if (!cleanPrompt) {
+    throw new Error("AI prompt is required.");
+  }
+
+  const errors = [];
+
+  const providers = AI_PROVIDER === "groq" ? ["groq", "gemini"] : ["gemini", "groq"];
+
+  for (const provider of providers) {
+    if (provider === "gemini" && canUseGemini()) {
+      try {
+        const text = await callGeminiProvider(cleanPrompt);
+        if (text) return text;
+        errors.push("Gemini returned an empty response.");
+      } catch (error) {
+        errors.push(`Gemini failed: ${error.message}`);
+      }
+    }
+
+    if (provider === "groq" && canUseGroq()) {
+      try {
+        const text = await callGroqProvider(cleanPrompt);
+        if (text) return text;
+        errors.push("Groq returned an empty response.");
+      } catch (error) {
+        errors.push(`Groq failed: ${error.message}`);
+      }
+    }
+  }
+
+  if (!canUseGemini() && !canUseGroq()) {
+    throw new Error("No AI provider configured. Set GEMINI_API_KEY or GROQ_API_KEY.");
+  }
+
+  throw new Error(errors.join(" "));
+}
+
+module.exports = {
+  callGemini,
+  parseJSONFromText,
+  parseJSONArrayFromText,
+};

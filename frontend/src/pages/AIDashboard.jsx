@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Box,
   Button,
@@ -6,7 +6,6 @@ import {
   CardContent,
   CardActions,
   Container,
-  Grid,
   Paper,
   Tab,
   Tabs,
@@ -21,8 +20,12 @@ import {
   CircularProgress,
   Skeleton,
 } from "@mui/material";
+import Grid from "@mui/material/Grid2";
 import { CloudUpload, CheckCircle, School } from "lucide-react";
 import { apiClient } from "../services/api";
+
+const getErrorMessage = (error, fallback) =>
+  error.response?.data?.message || error.response?.data?.error || fallback;
 
 function AIDashboard() {
   const [tabValue, setTabValue] = useState(0);
@@ -36,35 +39,60 @@ function AIDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
+  const hasFetchedSessions = useRef(false);
 
   // Summary popup state
   const [summaryDialogOpen, setSummaryDialogOpen] = useState(false);
   const [summaryDialogData, setSummaryDialogData] = useState(null);
 
-  // Fetch all sessions
+  const loadSessionDetails = useCallback(async (sessionId, options = {}) => {
+    if (!sessionId) return null;
+
+    const res = await apiClient.get(`/study/${sessionId}`);
+    const fullSession = res.data?.studySession || null;
+
+    if (fullSession) {
+      setSessions((prev) => {
+        const exists = prev.some((session) => session._id === fullSession._id);
+        return exists
+          ? prev.map((session) => (session._id === fullSession._id ? fullSession : session))
+          : [fullSession, ...prev];
+      });
+      setCurrentSession(fullSession);
+      if (options.openSummaryDialog) {
+        setSummaryDialogData(fullSession.summary || null);
+        setSummaryDialogOpen(true);
+      }
+    }
+
+    return fullSession;
+  }, []);
+
   const fetchSessions = useCallback(async () => {
     try {
       setLoading(true);
       const res = await apiClient.get("/study/sessions");
-      setSessions(res.data.sessions);
-      if (res.data.sessions.length > 0 && !currentSession) {
-        setCurrentSession(res.data.sessions[0]);
-      } else if (currentSession) {
-        const stillExists = res.data.sessions.find(s => s._id === currentSession._id);
-        if (!stillExists && res.data.sessions.length > 0) {
-          setCurrentSession(res.data.sessions[0]);
-        }
-      }
+      const nextSessions = res.data.sessions || [];
+      setSessions(nextSessions);
       setError(null);
+      setLoading(false);
+
+      if (nextSessions.length > 0) {
+        await loadSessionDetails(nextSessions[0]._id);
+      } else {
+        setCurrentSession(null);
+      }
     } catch (err) {
       setError("Failed to load study sessions. Please try again.");
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, [currentSession]);
+  }, [loadSessionDetails]);
 
   useEffect(() => {
+    if (hasFetchedSessions.current) return;
+    hasFetchedSessions.current = true;
     fetchSessions();
   }, [fetchSessions]);
 
@@ -77,15 +105,11 @@ function AIDashboard() {
   };
 
   // Handle click on a session card: set current session and open summary popup if summary exists
-  const handleSessionClick = (session) => {
-    setCurrentSession(session);
-    if (session.summary && session.summary.aiGenerated) {
-      setSummaryDialogData(session.summary);
-      setSummaryDialogOpen(true);
-    } else {
-      // Open popup with a message that no summary exists, and offer to generate
-      setSummaryDialogData(null);
-      setSummaryDialogOpen(true);
+  const handleSessionClick = async (session) => {
+    try {
+      await loadSessionDetails(session._id, { openSummaryDialog: true });
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to load the selected study session."));
     }
   };
 
@@ -110,7 +134,7 @@ function AIDashboard() {
         setSummaryDialogData(summary);
       }
     } catch (err) {
-      setError("Failed to generate summary: " + (err.response?.data?.error || err.message));
+      setError(`Failed to generate summary: ${getErrorMessage(err, err.message)}`);
     } finally {
       setGenerating(false);
     }
@@ -139,7 +163,7 @@ function AIDashboard() {
       setTabValue(2);
       setError(null);
     } catch (err) {
-      setError("Failed to generate questions: " + (err.response?.data?.error || err.message));
+      setError(`Failed to generate questions: ${getErrorMessage(err, err.message)}`);
     } finally {
       setGenerating(false);
     }
@@ -159,7 +183,7 @@ function AIDashboard() {
       setTabValue(3);
       setError(null);
     } catch (err) {
-      setError("Failed to generate learning path: " + (err.response?.data?.error || err.message));
+      setError(`Failed to generate learning path: ${getErrorMessage(err, err.message)}`);
     } finally {
       setGenerating(false);
     }
@@ -190,7 +214,7 @@ function AIDashboard() {
       setDialogContent(`Explanation: ${res.data.explanation}\nCorrect Answer: ${res.data.correctAnswer}`);
       setOpenDialog(true);
     } catch (err) {
-      setError("Failed to submit answer: " + (err.response?.data?.error || err.message));
+      setError(`Failed to submit answer: ${getErrorMessage(err, err.message)}`);
     }
   };
 
@@ -201,7 +225,7 @@ function AIDashboard() {
       const updatedSession = { ...currentSession, learningPath: res.data.learningPath };
       updateSessionInState(updatedSession);
     } catch (err) {
-      setError("Failed to update progress: " + (err.response?.data?.error || err.message));
+      setError(`Failed to update progress: ${getErrorMessage(err, err.message)}`);
     }
   };
 
@@ -228,12 +252,14 @@ function AIDashboard() {
       updateSessionInState(res.data.studySession);
       setError(null);
     } catch (err) {
-      setError("Failed to upload file: " + (err.response?.data?.error || err.message));
+      setError(`Failed to upload file: ${getErrorMessage(err, err.message)}`);
     } finally {
       setUploadingFile(false);
       setSelectedFile(null);
     }
   };
+
+  const hasLoadedSessionContent = Boolean(currentSession?.content?.rawText);
 
   if (loading) {
     return (
@@ -281,7 +307,7 @@ function AIDashboard() {
           ) : (
             <Grid container spacing={2}>
               {sessions.map((session) => (
-                <Grid item xs={12} sm={6} md={4} key={session._id}>
+                <Grid size={{ xs: 12, sm: 6, md: 4 }} key={session._id}>
                   <Card
                     onClick={() => handleSessionClick(session)}
                     onKeyDown={(e) => e.key === "Enter" && handleSessionClick(session)}
@@ -365,7 +391,7 @@ function AIDashboard() {
       {/* ========== TAB 1: UPLOAD & SUMMARIZE ========== */}
       {tabValue === 1 && (
         <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card>
               <CardContent>
                 <Typography variant="h6" fontWeight="bold" mb={2}>
@@ -391,13 +417,13 @@ function AIDashboard() {
                   <CloudUpload size={40} color="#1976d2" />
                   <Typography mt={2}>Drag and drop your file or click to browse</Typography>
                   <Typography variant="caption" color="gray">
-                    Supported: TXT, MD, CSV, JSON, JS, HTML, CSS, XML, LOG, PDF, DOC, DOCX, JPG, PNG, GIF, WEBP (Max 50MB)
+                    Supported: TXT, MD, CSV, JSON, JS, HTML, CSS, XML, LOG, PDF, DOCX, JPG, PNG, GIF, WEBP (Max 200MB)
                   </Typography>
                   <input
                     type="file"
                     hidden
                     onChange={handleFileUpload}
-                    accept=".txt,.md,.csv,.json,.js,.html,.css,.xml,.log,.pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp"
+                    accept=".txt,.md,.csv,.json,.js,.html,.css,.xml,.log,.pdf,.docx,.jpg,.jpeg,.png,.gif,.webp"
                   />
                 </Box>
                 {uploadingFile && (
@@ -414,7 +440,7 @@ function AIDashboard() {
               </CardContent>
             </Card>
           </Grid>
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card>
               <CardContent>
                 <Typography variant="h6" fontWeight="bold" mb={2}>
@@ -444,7 +470,7 @@ function AIDashboard() {
                   fullWidth
                   sx={{ mt: 3 }}
                   onClick={handleGenerateSummary}
-                  disabled={!currentSession?.content?.rawText || generating}
+                  disabled={!hasLoadedSessionContent || generating}
                 >
                   {generating ? <CircularProgress size={24} /> : "Generate Summary"}
                 </Button>
@@ -460,7 +486,7 @@ function AIDashboard() {
           <Button
             variant="contained"
             onClick={handleGenerateQuestions}
-            disabled={!currentSession?.content?.rawText || generating}
+            disabled={!hasLoadedSessionContent || generating}
             sx={{ mb: 2 }}
           >
             {generating ? "Generating Questions..." : "Generate Practice Questions"}
@@ -474,7 +500,7 @@ function AIDashboard() {
                   </Typography>
                   <Grid container spacing={1} mb={2}>
                     {(q.options || []).map((opt, optIdx) => (
-                      <Grid item xs={12} sm={6} key={optIdx}>
+                      <Grid size={{ xs: 12, sm: 6 }} key={optIdx}>
                         <Button
                           variant={q.userAnswer === opt ? (q.isCorrect ? "contained" : "outlined") : "outlined"}
                           color={q.userAnswer === opt ? (q.isCorrect ? "success" : "error") : "primary"}
@@ -513,7 +539,7 @@ function AIDashboard() {
           <Button
             variant="contained"
             onClick={handleGenerateLearningPath}
-            disabled={!currentSession?.content?.rawText || generating}
+            disabled={!hasLoadedSessionContent || generating}
             sx={{ mb: 2 }}
           >
             {generating ? "Generating..." : "Generate Adaptive Learning Path"}
@@ -589,7 +615,7 @@ function AIDashboard() {
         <Grid container spacing={3}>
           {currentSession ? (
             <>
-              <Grid item xs={12} sm={6} md={4}>
+              <Grid size={{ xs: 12, sm: 6, md: 4 }}>
                 <Card>
                   <CardContent sx={{ textAlign: "center" }}>
                     <Typography variant="h5" fontWeight="bold" color="#1976d2">
@@ -599,7 +625,7 @@ function AIDashboard() {
                   </CardContent>
                 </Card>
               </Grid>
-              <Grid item xs={12} sm={6} md={4}>
+              <Grid size={{ xs: 12, sm: 6, md: 4 }}>
                 <Card>
                   <CardContent sx={{ textAlign: "center" }}>
                     <Typography variant="h5" fontWeight="bold" color="green">
@@ -609,7 +635,7 @@ function AIDashboard() {
                   </CardContent>
                 </Card>
               </Grid>
-              <Grid item xs={12} sm={6} md={4}>
+              <Grid size={{ xs: 12, sm: 6, md: 4 }}>
                 <Card>
                   <CardContent sx={{ textAlign: "center" }}>
                     <Typography variant="h5" fontWeight="bold" color="#ff6f00">
@@ -619,7 +645,7 @@ function AIDashboard() {
                   </CardContent>
                 </Card>
               </Grid>
-              <Grid item xs={12}>
+              <Grid size={12}>
                 <Card>
                   <CardContent>
                     <Typography variant="h6" fontWeight="bold" mb={2}>
@@ -638,7 +664,7 @@ function AIDashboard() {
               </Grid>
             </>
           ) : (
-            <Grid item xs={12}>
+            <Grid size={12}>
               <Card>
                 <CardContent sx={{ textAlign: "center", py: 4 }}>
                   <Typography color="gray">Select a study session to view statistics.</Typography>
@@ -688,7 +714,7 @@ function AIDashboard() {
                   setSummaryDialogOpen(false);
                   handleGenerateSummary();
                 }}
-                disabled={generating || !currentSession?.content?.rawText}
+                disabled={generating || !hasLoadedSessionContent}
               >
                 {generating ? "Generating..." : "Generate Summary"}
               </Button>

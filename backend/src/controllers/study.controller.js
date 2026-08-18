@@ -1,11 +1,11 @@
 const StudySession = require("../models/StudySession");
 const mongoose = require("mongoose");
-const fs = require("fs").promises; // Use promises for better cleanup
+const fs = require("fs").promises;
 const path = require("path");
-const { PDFParse } = require("pdf-parse");
 const Tesseract = require("tesseract.js");
 const mammoth = require("mammoth");
 const { callGemini, parseJSONArrayFromText } = require("../utils/gemini");
+const { extractTextFromPdf } = require("../utils/pdf");
 
 // ============ Configuration ============
 const MAX_FILE_SIZE = Number(process.env.MAX_UPLOAD_SIZE_MB || 200) * 1024 * 1024;
@@ -49,20 +49,35 @@ function extractJSONArray(text) {
   return String(text || "").split("\n").filter(line => line.trim()).map(l => l.replace(/^[,\s"']+|["',\s]+$/g, ""));
 }
 
+function respondError(res, status, message) {
+  return res.status(status).json({
+    success: false,
+    message,
+  });
+}
+
+function isValidObjectId(value) {
+  return mongoose.Types.ObjectId.isValid(value);
+}
+
+function normalizeStoredUserId(userId) {
+  return isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : null;
+}
+
 // ============ CREATE STUDY SESSION ============
 const createStudySession = async (req, res) => {
   try {
     const userId = req.user?.id;
     const { title, description, tags } = req.body;
 
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    if (!title) return res.status(400).json({ error: "Title is required" });
+    if (!userId) return respondError(res, 401, "Unauthorized");
+    if (!title || !String(title).trim()) return respondError(res, 400, "Title is required");
 
     const studySession = new StudySession({
       userId,
-      title,
-      description,
-      tags: tags || [],
+      title: String(title).trim(),
+      description: description ? String(description).trim() : "",
+      tags: Array.isArray(tags) ? tags : [],
       status: "in-progress",
     });
 
@@ -70,7 +85,7 @@ const createStudySession = async (req, res) => {
     res.status(201).json({ success: true, message: "Study session created", studySession });
   } catch (error) {
     console.error("Create session error:", error);
-    res.status(500).json({ message: "Error creating study session", error: error.message });
+    respondError(res, 500, "Error creating study session");
   }
 };
 
@@ -80,27 +95,30 @@ const uploadAndProcessMaterial = async (req, res) => {
 
   try {
     if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
+      return respondError(res, 400, "No file uploaded");
     }
 
     const userId = req.user?.id;
 
     if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return respondError(res, 401, "Unauthorized");
     }
 
-    const normalizedUserId = mongoose.Types.ObjectId.isValid(userId)
-      ? new mongoose.Types.ObjectId(userId)
-      : new mongoose.Types.ObjectId();
+    const normalizedUserId = normalizeStoredUserId(userId);
+    if (!normalizedUserId) {
+      return respondError(res, 400, "Invalid user id");
+    }
 
     filePath = req.file.path;
 
     // File size validation
     if (req.file.size > MAX_FILE_SIZE) {
       await fs.unlink(filePath).catch(() => {});
-      return res.status(400).json({
-        error: `File size exceeds ${Math.round(MAX_FILE_SIZE / (1024 * 1024))}MB limit`,
-      });
+      return respondError(
+        res,
+        400,
+        `File size exceeds ${Math.round(MAX_FILE_SIZE / (1024 * 1024))}MB limit`
+      );
     }
 
     const { sessionId } = req.body;
@@ -146,9 +164,7 @@ const uploadAndProcessMaterial = async (req, res) => {
 
     if (!allowedExt.includes(ext) && ext) {
       await fs.unlink(filePath).catch(() => {});
-      return res.status(400).json({
-        error: "Unsupported file type",
-      });
+      return respondError(res, 400, "Unsupported file type");
     }
 
     // ================== EXTRACT CONTENT ==================
@@ -172,17 +188,10 @@ const uploadAndProcessMaterial = async (req, res) => {
     }
 
     // ---------- PDF ----------
-    // ---------- PDF ----------
-else if (ext === ".pdf") {
-  const pdfBuffer = await fs.readFile(filePath);
-
-  const parser = new PDFParse({ data: pdfBuffer });
-  const pdfData = await parser.getText();
-
-  fileContent = pdfData.text || "";
-
-  await parser.destroy();
-}
+    else if (ext === ".pdf") {
+      const pdfBuffer = await fs.readFile(filePath);
+      fileContent = await extractTextFromPdf(pdfBuffer);
+    }
 
     // ---------- IMAGE OCR ----------
     else if ([".jpg", ".jpeg", ".png", ".gif", ".webp"].includes(ext)) {
@@ -274,9 +283,7 @@ else if (ext === ".pdf") {
 
       if (!studySession) {
         await fs.unlink(filePath).catch(() => {});
-        return res.status(404).json({
-          error: "Study session not found",
-        });
+        return respondError(res, 404, "Study session not found");
       }
     } else {
       const sessionTitle = fileName.replace(/\.[^/.]+$/, "");
@@ -323,10 +330,7 @@ else if (ext === ".pdf") {
       await fs.unlink(filePath).catch(() => {});
     }
 
-    return res.status(500).json({
-      message: "Error uploading material",
-      error: error.message || "Unknown upload error",
-    });
+    return respondError(res, 500, "Error uploading material");
   }
 };
 
@@ -355,11 +359,12 @@ const generateSummary = async (req, res) => {
   try {
     const { sessionId } = req.params;
     const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!userId) return respondError(res, 401, "Unauthorized");
+    if (!isValidObjectId(sessionId)) return respondError(res, 400, "Invalid session id");
 
     const studySession = await StudySession.findOne({ _id: sessionId, userId });
     if (!studySession || !studySession.content?.rawText) {
-      return res.status(404).json({ message: "Study session or content not found" });
+      return respondError(res, 404, "Study session or content not found");
     }
 
     const summaryText = await generateSummaryAI(studySession.content.rawText);
@@ -375,7 +380,7 @@ const generateSummary = async (req, res) => {
     res.json({ success: true, message: "Summary generated", summary: studySession.summary });
   } catch (error) {
     console.error("Summary error:", error);
-    res.status(500).json({ message: "Error generating summary", error: error.message });
+    respondError(res, 500, "Error generating summary");
   }
 };
 
@@ -412,14 +417,15 @@ const generatePracticeQuestions = async (req, res) => {
     let { numQuestions = 5, difficulty = "intermediate" } = req.body;
     const userId = req.user?.id;
 
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!userId) return respondError(res, 401, "Unauthorized");
+    if (!isValidObjectId(sessionId)) return respondError(res, 400, "Invalid session id");
     numQuestions = Math.min(parseInt(numQuestions) || 5, MAX_QUESTIONS);
     const validDifficulties = ["beginner", "intermediate", "advanced"];
     if (!validDifficulties.includes(difficulty)) difficulty = "intermediate";
 
     const studySession = await StudySession.findOne({ _id: sessionId, userId });
     if (!studySession || !studySession.content?.rawText) {
-      return res.status(404).json({ message: "Study session or content not found" });
+      return respondError(res, 404, "Study session or content not found");
     }
 
     let newQuestions = await generateQuestionsAI(
@@ -445,7 +451,7 @@ const generatePracticeQuestions = async (req, res) => {
     });
   } catch (error) {
     console.error("Generate questions error:", error);
-    res.status(500).json({ message: "Error generating questions", error: error.message });
+    respondError(res, 500, "Error generating questions");
   }
 };
 
@@ -475,7 +481,7 @@ async function generateQuestionsAI(content, numQuestions, difficulty, topics) {
       return {
         _id: new mongoose.Types.ObjectId(),
         question: q.question || "Missing question",
-        options,
+        options: options.length ? options : ["Option A", "Option B", "Option C", "Option D"],
         correctAnswer,
         explanation: q.explanation || "",
         difficulty: q.difficulty || difficulty,
@@ -492,11 +498,12 @@ const generateLearningPath = async (req, res) => {
   try {
     const { sessionId } = req.params;
     const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!userId) return respondError(res, 401, "Unauthorized");
+    if (!isValidObjectId(sessionId)) return respondError(res, 400, "Invalid session id");
 
     const studySession = await StudySession.findOne({ _id: sessionId, userId });
     if (!studySession || !studySession.content?.rawText) {
-      return res.status(404).json({ message: "Study session or content not found" });
+      return respondError(res, 404, "Study session or content not found");
     }
 
     let learningPath = await generateLearningPathAI(
@@ -512,7 +519,7 @@ const generateLearningPath = async (req, res) => {
     res.json({ success: true, message: "Learning path generated", learningPath });
   } catch (error) {
     console.error("Learning path error:", error);
-    res.status(500).json({ message: "Error generating learning path", error: error.message });
+    respondError(res, 500, "Error generating learning path");
   }
 };
 
@@ -621,76 +628,44 @@ const submitQuizAnswer = async (req, res) => {
     const { sessionId, questionId, userAnswer } = req.body;
     const userId = req.user?.id;
 
-    console.log("Submit answer request:", {
-      sessionId,
-      questionId,
-      userAnswer,
-      userId,
-    });
-
-    // Authentication check
     if (!userId) {
-      return res.status(401).json({
-        error: "Unauthorized",
-      });
+      return respondError(res, 401, "Unauthorized");
     }
 
-    // Required fields check
     if (!sessionId || !questionId || userAnswer === undefined || userAnswer === null) {
-      return res.status(400).json({
-        error: "Missing required fields",
-        received: {
-          sessionId,
-          questionId,
-          userAnswer,
-        },
-      });
+      return respondError(res, 400, "sessionId, questionId, and userAnswer are required");
     }
 
-    // Validate session ID
     if (!mongoose.Types.ObjectId.isValid(sessionId)) {
-      return res.status(400).json({
-        error: "Invalid sessionId",
-      });
+      return respondError(res, 400, "Invalid sessionId");
     }
 
-    // Find study session
     const studySession = await StudySession.findOne({
       _id: sessionId,
       userId,
     });
 
     if (!studySession) {
-      return res.status(404).json({
-        message: "Study session not found",
-      });
+      return respondError(res, 404, "Study session not found");
     }
 
-    // Make sure questions exist
     if (
       !studySession.practiceQuestions ||
       !Array.isArray(studySession.practiceQuestions)
     ) {
-      return res.status(404).json({
-        message: "No practice questions found in this study session",
-      });
+      return respondError(res, 404, "No practice questions found in this study session");
     }
 
-    // Find question
     const question = studySession.practiceQuestions.find(
       (q) => q._id && q._id.toString() === questionId.toString()
     );
 
     if (!question) {
-      return res.status(404).json({
-        message: "Question not found",
-        questionId,
-      });
+      return respondError(res, 404, "Question not found");
     }
 
-    // ------------------------------------------------
-    // Normalize user's answer safely
-    // ------------------------------------------------
+    const previousUserAnswer = question.userAnswer;
+    const previousIsCorrect = question.isCorrect;
     let selectedAnswer = String(userAnswer).trim();
 
     // If frontend sends an option index such as 0, 1, 2, 3
@@ -706,9 +681,6 @@ const submitQuizAnswer = async (req, res) => {
       }
     }
 
-    // ------------------------------------------------
-    // Normalize correct answer
-    // ------------------------------------------------
     let correctAnswer = String(question.correctAnswer || "").trim();
 
     // If correctAnswer is A/B/C/D, convert it to the actual option
@@ -724,25 +696,11 @@ const submitQuizAnswer = async (req, res) => {
       }
     }
 
-    // ------------------------------------------------
-    // Compare answers
-    // ------------------------------------------------
     const normalizedSelectedAnswer = selectedAnswer.toLowerCase();
     const normalizedCorrectAnswer = correctAnswer.toLowerCase();
 
-    const isCorrect =
-      normalizedSelectedAnswer === normalizedCorrectAnswer;
+    const isCorrect = normalizedSelectedAnswer === normalizedCorrectAnswer;
 
-    // ------------------------------------------------
-    // Save answer
-    // ------------------------------------------------
-    question.userAnswer = selectedAnswer;
-    question.isCorrect = isCorrect;
-    question.attemptedAt = new Date();
-
-    // ------------------------------------------------
-    // Initialize progress if missing
-    // ------------------------------------------------
     if (!studySession.progress) {
       studySession.progress = {
         questionsAnswered: 0,
@@ -752,14 +710,24 @@ const submitQuizAnswer = async (req, res) => {
       };
     }
 
-    // ------------------------------------------------
-    // Update progress
-    // ------------------------------------------------
-    studySession.progress.questionsAnswered += 1;
-
-    if (isCorrect) {
-      studySession.progress.correctAnswers += 1;
+    const wasPreviouslyAnswered = Boolean(previousUserAnswer);
+    if (!wasPreviouslyAnswered) {
+      studySession.progress.questionsAnswered += 1;
+      if (isCorrect) {
+        studySession.progress.correctAnswers += 1;
+      }
+    } else if (previousIsCorrect !== isCorrect) {
+      if (previousIsCorrect && studySession.progress.correctAnswers > 0) {
+        studySession.progress.correctAnswers -= 1;
+      }
+      if (isCorrect) {
+        studySession.progress.correctAnswers += 1;
+      }
     }
+
+    question.userAnswer = selectedAnswer;
+    question.isCorrect = isCorrect;
+    question.attemptedAt = new Date();
 
     studySession.progress.accuracy =
       studySession.progress.questionsAnswered > 0
@@ -770,14 +738,8 @@ const submitQuizAnswer = async (req, res) => {
 
     studySession.progress.lastActivityAt = new Date();
 
-    // ------------------------------------------------
-    // Save database
-    // ------------------------------------------------
     await studySession.save();
 
-    // ------------------------------------------------
-    // Response
-    // ------------------------------------------------
     return res.json({
       success: true,
       isCorrect,
@@ -787,12 +749,7 @@ const submitQuizAnswer = async (req, res) => {
     });
   } catch (error) {
     console.error("Submit answer error:", error);
-    console.error("Error stack:", error.stack);
-
-    return res.status(500).json({
-      message: "Error submitting answer",
-      error: error.message,
-    });
+    return respondError(res, 500, "Error submitting answer");
   }
 };
 
@@ -802,17 +759,18 @@ const updateLearningPathProgress = async (req, res) => {
     const { sessionId } = req.params;
     const { stepNumber } = req.body;
     const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!userId) return respondError(res, 401, "Unauthorized");
     if (!sessionId || stepNumber === undefined) {
-      return res.status(400).json({ error: "Missing required fields" });
+      return respondError(res, 400, "Missing required fields");
     }
+    if (!isValidObjectId(sessionId)) return respondError(res, 400, "Invalid session id");
 
     const studySession = await StudySession.findOne({ _id: sessionId, userId });
-    if (!studySession) return res.status(404).json({ message: "Study session not found" });
+    if (!studySession) return respondError(res, 404, "Study session not found");
 
     const totalSteps = studySession.learningPath.steps.length;
     if (stepNumber < 1 || stepNumber > totalSteps) {
-      return res.status(400).json({ error: "Invalid step number" });
+      return respondError(res, 400, "Invalid step number");
     }
 
     if (!studySession.learningPath.completedSteps.includes(stepNumber)) {
@@ -826,7 +784,7 @@ const updateLearningPathProgress = async (req, res) => {
     res.json({ success: true, message: "Progress updated", learningPath: studySession.learningPath });
   } catch (error) {
     console.error("Update progress error:", error);
-    res.status(500).json({ message: "Error updating progress", error: error.message });
+    respondError(res, 500, "Error updating progress");
   }
 };
 
@@ -835,15 +793,16 @@ const getStudySession = async (req, res) => {
   try {
     const { sessionId } = req.params;
     const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!userId) return respondError(res, 401, "Unauthorized");
+    if (!isValidObjectId(sessionId)) return respondError(res, 400, "Invalid session id");
 
     const studySession = await StudySession.findOne({ _id: sessionId, userId });
-    if (!studySession) return res.status(404).json({ message: "Study session not found" });
+    if (!studySession) return respondError(res, 404, "Study session not found");
 
     res.json({ success: true, studySession });
   } catch (error) {
     console.error("Fetch session error:", error);
-    res.status(500).json({ message: "Error fetching session", error: error.message });
+    respondError(res, 500, "Error fetching session");
   }
 };
 
@@ -851,7 +810,7 @@ const getStudySession = async (req, res) => {
 const getAllStudySessions = async (req, res) => {
   try {
     const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!userId) return respondError(res, 401, "Unauthorized");
 
     const sessions = await StudySession.find({ userId })
       .select("title description status uploadedFile.originalName content.extractedTopics progress learningPath createdAt")
@@ -860,7 +819,7 @@ const getAllStudySessions = async (req, res) => {
     res.json({ success: true, sessions, totalSessions: sessions.length });
   } catch (error) {
     console.error("Fetch all sessions error:", error);
-    res.status(500).json({ message: "Error fetching sessions", error: error.message });
+    respondError(res, 500, "Error fetching sessions");
   }
 };
 

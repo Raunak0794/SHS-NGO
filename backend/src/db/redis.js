@@ -5,7 +5,7 @@ let redis = null;
 if (process.env.REDIS_URL) {
   redis = new Redis(process.env.REDIS_URL, {
     maxRetriesPerRequest: 1,
-    lazyConnect: true,
+    lazyConnect: false,
   });
 
   redis.on("connect", () => {

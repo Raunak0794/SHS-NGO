@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  getAuthToken,
   getMe,
   login as loginApi,
   register as registerApi,
@@ -13,6 +12,7 @@ import { AuthContext } from './AuthContextType';
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const hasBootstrapped = useRef(false);
 
   const fetchUser = useCallback(async () => {
     try {
@@ -31,9 +31,10 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
-    const token = getAuthToken();
-    if (!token) {
-      setUser(null);
+    if (hasBootstrapped.current) return;
+    hasBootstrapped.current = true;
+
+    if (window.location.pathname === '/auth/google/success') {
       setLoading(false);
       return;
     }
@@ -52,9 +53,8 @@ export const AuthProvider = ({ children }) => {
       if (userData) {
         setUser(userData);
       }
-      const freshUser = await fetchUser().catch(() => userData);
       toast.success('Login successful!');
-      return { success: true, user: freshUser || userData };
+      return { success: true, user: userData };
     } catch (error) {
       const message = error.response?.data?.message || 'Login failed';
       toast.error(message);
@@ -80,9 +80,8 @@ export const AuthProvider = ({ children }) => {
       if (userData) {
         setUser(userData);
       }
-      const freshUser = await fetchUser().catch(() => userData);
       toast.success('Registration successful!');
-      return { success: true, user: freshUser || userData };
+      return { success: true, user: userData };
     } catch (error) {
       const message = error.response?.data?.message || 'Registration failed';
       toast.error(message);

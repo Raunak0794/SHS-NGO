@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { apiClient } from "../services/api";
-import Navbar from "../components/Navbar";
+import toast from "react-hot-toast";
 import { 
   Calendar, 
   TrendingUp, 
@@ -44,10 +44,10 @@ const WeeklyReviewPage = () => {
       const res = await apiClient.post("/microgoals/weekly-review/generate", { moodRating });
       setReviews((prev) => [res.data.weeklyReview, ...prev]);
       setMoodRating(3);
-      alert("Weekly review generated successfully!");
+      toast.success("Weekly review generated successfully!");
     } catch (error) {
       console.error("Error generating review:", error);
-      alert("Failed to generate weekly review");
+      toast.error(error.response?.data?.message || "Failed to generate weekly review");
     } finally {
       setGenerating(false);
     }
@@ -113,6 +113,7 @@ const WeeklyReviewPage = () => {
                   <button
                     key={rating}
                     onClick={() => setMoodRating(rating)}
+                    aria-label={`${getMoodText(rating)} mood (${rating} of 5)`}
                     className={`text-3xl p-2 rounded-full transition-all duration-200 ${
                       moodRating === rating 
                         ? "bg-indigo-100 scale-110 shadow-md" 
@@ -207,7 +208,11 @@ const WeeklyReviewPage = () => {
               <h2 className="text-xl font-bold text-gray-800">
                 Week of {selectedReview.week?.startDate ? new Date(selectedReview.week.startDate).toLocaleDateString() : "Unknown Week"}
               </h2>
-              <button onClick={() => setSelectedReview(null)} className="p-1 hover:bg-gray-100 rounded-full transition">
+              <button
+                onClick={() => setSelectedReview(null)}
+                aria-label="Close review details"
+                className="p-1 hover:bg-gray-100 rounded-full transition"
+              >
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>

@@ -1,13 +1,18 @@
 const userModel = require('../models/user.model');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const redis = require('../db/redis');
+const { randomUUID } = require('crypto');
 const { google } = require('googleapis');
 const { getAuthCookieOptions, getClearAuthCookieOptions } = require('../utils/cookies');
+const { blacklistToken } = require('../utils/tokenBlacklist');
 
 function getJwtSecret() {
     const secret = process.env.JWT_SECRET || "dev-secret-change-me";
     return String(secret).replace(/\s+/g, "").trim();
+}
+
+function getFrontendOrigin() {
+    return process.env.FRONTEND_URL || "http://localhost:5173";
 }
 
 function sanitizeUser(user) {
@@ -54,7 +59,7 @@ async function registerUser(req, res) {
             id: user._id,
             username: user.username,
             email: user.email,
-        }, getJwtSecret(), { expiresIn: '1d' });
+        }, getJwtSecret(), { expiresIn: '1d', jwtid: randomUUID() });
 
         res.cookie("token", token, getAuthCookieOptions());
 
@@ -98,7 +103,7 @@ async function loginUser(req, res) {
             id: user._id,
             username: user.username,
             email: user.email,
-        }, getJwtSecret(), { expiresIn: '1d' });
+        }, getJwtSecret(), { expiresIn: '1d', jwtid: randomUUID() });
 
         res.cookie('token', token, getAuthCookieOptions());
 
@@ -119,9 +124,9 @@ async function logoutUser(req, res) {
     try {
         const token = req.cookies?.token;
 
-        if (token && redis) {
+        if (token) {
             try {
-                await redis.set(`blacklist:${token}`, 'true', 'EX', 24 * 60 * 60);
+                await blacklistToken(token);
             } catch (err) {
                 console.error("Redis blacklist error:", err.message);
             }
@@ -187,7 +192,7 @@ async function googleCallback(req, res) {
 
         const user = await userModel.findById(decoded.id);
         if (!user) {
-            return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/dashboard?calendar=error`);
+            return res.redirect(`${getFrontendOrigin()}/dashboard?calendar=error`);
         }
 
         await userModel.findByIdAndUpdate(decoded.id, {
@@ -198,10 +203,10 @@ async function googleCallback(req, res) {
             },
         });
 
-        res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/dashboard?calendar=connected`);
+        res.redirect(`${getFrontendOrigin()}/dashboard?calendar=connected`);
     } catch (err) {
         console.error("Google calendar callback error:", err);
-        res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/dashboard?calendar=error`);
+        res.redirect(`${getFrontendOrigin()}/dashboard?calendar=error`);
     }
 }
 
