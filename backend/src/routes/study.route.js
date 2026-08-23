@@ -82,6 +82,7 @@ router.use(authMiddleware);
 // ============ Study Session CRUD ============
 router.post("/create", studyController.createStudySession);
 router.get("/sessions", studyController.getAllStudySessions);
+router.delete("/:sessionId", studyController.deleteStudySession);
 router.get("/:sessionId", studyController.getStudySession);
 
 // ============ Material Upload & Processing ============

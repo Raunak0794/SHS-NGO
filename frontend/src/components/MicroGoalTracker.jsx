@@ -37,6 +37,18 @@ const MicroGoalTracker = ({ goalId, onUpdate }) => {
     fetchMicroGoals();
   }, [fetchMicroGoals]);
 
+  useEffect(() => {
+    const calendarResult = new URLSearchParams(window.location.search).get("calendar");
+    if (!calendarResult) return;
+
+    setCalendarStatus(
+      calendarResult === "connected"
+        ? "Google Calendar connected. Click Sync All to add your micro-goals."
+        : "Google Calendar authorization failed. Check the connected Google account and try again."
+    );
+    window.history.replaceState({}, "", window.location.pathname);
+  }, []);
+
   const updateMicroGoal = async (microGoalId, updates) => {
     try {
       const res = await apiClient.put(`/microgoals/${microGoalId}`, updates);

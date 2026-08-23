@@ -21,7 +21,7 @@ import {
   Skeleton,
 } from "@mui/material";
 import Grid from "@mui/material/Grid2";
-import { CloudUpload, CheckCircle, School } from "lucide-react";
+import { CloudUpload, CheckCircle, School, Trash2 } from "lucide-react";
 import { apiClient } from "../services/api";
 
 const getErrorMessage = (error, fallback) =>
@@ -38,7 +38,9 @@ function AIDashboard() {
   const [dialogTitle, setDialogTitle] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploadSuccess, setUploadSuccess] = useState("");
+  const [sessionToDelete, setSessionToDelete] = useState(null);
+  const [deletingSessionId, setDeletingSessionId] = useState(null);
   const hasFetchedSessions = useRef(false);
 
   // Summary popup state
@@ -98,9 +100,12 @@ function AIDashboard() {
 
   // Helper to update both sessions list and current session
   const updateSessionInState = (updatedSession) => {
-    setSessions(prev =>
-      prev.map(s => (s._id === updatedSession._id ? updatedSession : s))
-    );
+    setSessions((prev) => {
+      const exists = prev.some((session) => session._id === updatedSession._id);
+      return exists
+        ? prev.map((session) => (session._id === updatedSession._id ? updatedSession : session))
+        : [updatedSession, ...prev];
+    });
     setCurrentSession(updatedSession);
   };
 
@@ -110,6 +115,28 @@ function AIDashboard() {
       await loadSessionDetails(session._id, { openSummaryDialog: true });
     } catch (err) {
       setError(getErrorMessage(err, "Failed to load the selected study session."));
+    }
+  };
+
+  const requestDeleteSession = (event, session) => {
+    event.stopPropagation();
+    setSessionToDelete(session);
+  };
+
+  const handleDeleteSession = async () => {
+    if (!sessionToDelete?._id) return;
+
+    setDeletingSessionId(sessionToDelete._id);
+    try {
+      await apiClient.delete(`/study/${sessionToDelete._id}`);
+      setSessionToDelete(null);
+      setSummaryDialogOpen(false);
+      setError(null);
+      await fetchSessions();
+    } catch (err) {
+      setError(`Failed to delete session: ${getErrorMessage(err, err.message)}`);
+    } finally {
+      setDeletingSessionId(null);
     }
   };
 
@@ -239,7 +266,7 @@ function AIDashboard() {
   const uploadFile = async (file) => {
     if (!file) return;
 
-    setSelectedFile(file);
+    setUploadSuccess("");
     setUploadingFile(true);
     const formData = new FormData();
     formData.append("file", file);
@@ -250,12 +277,12 @@ function AIDashboard() {
     try {
       const res = await apiClient.post("/study/upload", formData);
       updateSessionInState(res.data.studySession);
+      setUploadSuccess(`${res.data.studySession.uploadedFile?.originalName || file.name} uploaded and ready for AI study tools.`);
       setError(null);
     } catch (err) {
       setError(`Failed to upload file: ${getErrorMessage(err, err.message)}`);
     } finally {
       setUploadingFile(false);
-      setSelectedFile(null);
     }
   };
 
@@ -375,7 +402,15 @@ function AIDashboard() {
                         />
                       )}
                     </CardContent>
-                    <CardActions sx={{ pt: 0, justifyContent: "flex-end" }}>
+                    <CardActions sx={{ pt: 0, justifyContent: "space-between" }}>
+                      <Button
+                        color="error"
+                        size="small"
+                        startIcon={<Trash2 size={16} />}
+                        onClick={(event) => requestDeleteSession(event, session)}
+                      >
+                        Delete
+                      </Button>
                       <Typography variant="caption" color="textSecondary">
                         Created: {new Date(session.createdAt).toLocaleDateString()}
                       </Typography>
@@ -432,9 +467,9 @@ function AIDashboard() {
                     <Typography variant="body2">Uploading and processing...</Typography>
                   </Box>
                 )}
-                {selectedFile && !uploadingFile && (
+                {uploadSuccess && !uploadingFile && (
                   <Typography variant="body2" color="green" mt={2}>
-                    ✅ File uploaded: {selectedFile.name}
+                    {uploadSuccess}
                   </Typography>
                 )}
               </CardContent>
@@ -674,6 +709,33 @@ function AIDashboard() {
           )}
         </Grid>
       )}
+
+      <Dialog
+        open={Boolean(sessionToDelete)}
+        onClose={() => !deletingSessionId && setSessionToDelete(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Delete study session?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Delete <strong>{sessionToDelete?.title}</strong> and all of its summary, questions, and learning-path progress? This cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSessionToDelete(null)} disabled={Boolean(deletingSessionId)}>
+            Cancel
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleDeleteSession}
+            disabled={Boolean(deletingSessionId)}
+          >
+            {deletingSessionId ? "Deleting..." : "Delete permanently"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* ========== SUMMARY POPUP DIALOG ========== */}
       <Dialog open={summaryDialogOpen} onClose={() => setSummaryDialogOpen(false)} maxWidth="md" fullWidth>

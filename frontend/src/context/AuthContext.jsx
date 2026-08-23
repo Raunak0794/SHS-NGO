@@ -5,6 +5,7 @@ import {
   register as registerApi,
   logout as logoutApi,
   setAuthToken,
+  getAuthToken,
 } from '../services/api';
 import toast from 'react-hot-toast';
 import { AuthContext } from './AuthContextType';
@@ -39,7 +40,20 @@ export const AuthProvider = ({ children }) => {
       return;
     }
 
-    fetchUser().catch(() => {});
+    // Public pages should not wait for the backend when there is no saved login.
+    if (!getAuthToken()) {
+      setLoading(false);
+      return;
+    }
+
+    // A stale token or unavailable API must never keep the entire app on a spinner.
+    const bootstrapTimeout = window.setTimeout(() => {
+      setLoading(false);
+    }, 2500);
+
+    fetchUser()
+      .catch(() => {})
+      .finally(() => window.clearTimeout(bootstrapTimeout));
   }, [fetchUser]);
 
   const login = async (identifier, password) => {

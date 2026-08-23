@@ -24,15 +24,20 @@ async function createCalendarEvent(tokens, { title, description, deadline }) {
   const oAuth2Client = getOAuth2Client(tokens);
   const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
 
+  const start = new Date(deadline);
+  if (Number.isNaN(start.getTime())) {
+    throw new Error("A valid calendar deadline is required.");
+  }
+
   const event = {
     summary: title,
     description: description || 'Study micro-goal',
     start: {
-      dateTime: new Date(deadline).toISOString(),
+        dateTime: start.toISOString(),
       timeZone: 'UTC',
     },
     end: {
-      dateTime: new Date(new Date(deadline).getTime() + 60 * 60 * 1000), // 1 hour duration
+        dateTime: new Date(start.getTime() + 60 * 60 * 1000).toISOString(), // 1 hour duration
       timeZone: 'UTC',
     },
     reminders: {

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { getDashboard, completeGoal } from "../services/api";
 import { useAuth } from "../hooks/useAuth";
 import toast from "react-hot-toast";
+import MicroGoalTracker from "../components/MicroGoalTracker";
 import { 
   TrendingUp, 
   Award, 
@@ -253,6 +254,12 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
+
+        {data.nextGoal?._id && (
+          <div className="mb-8">
+            <MicroGoalTracker goalId={data.nextGoal._id} onUpdate={load} />
+          </div>
+        )}
 
         {/* Badges Section */}
         <div className="glass-card p-6">

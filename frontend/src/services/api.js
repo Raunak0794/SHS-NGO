@@ -5,18 +5,22 @@ const DEV_BACKEND_ORIGIN = "http://localhost:5000";
 const trimTrailingSlash = (value) => String(value || "").trim().replace(/\/+$/, "");
 const explicitApiUrl = trimTrailingSlash(import.meta.env.VITE_API_URL);
 const explicitBackendUrl = trimTrailingSlash(import.meta.env.VITE_BACKEND_URL);
+const explicitDevApiUrl = trimTrailingSlash(import.meta.env.VITE_DEV_API_URL);
+const REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 8000);
 
 export const API_BASE_URL =
-  explicitApiUrl ||
-  (import.meta.env.DEV ? `${DEV_BACKEND_ORIGIN}/api` : "/api");
+  import.meta.env.DEV
+    ? explicitDevApiUrl || `${DEV_BACKEND_ORIGIN}/api`
+    : explicitApiUrl || "/api";
 
 export const BACKEND_ORIGIN = API_BASE_URL.startsWith("http")
   ? API_BASE_URL.replace(/\/api\/?$/, "")
-  : explicitBackendUrl || (import.meta.env.DEV ? DEV_BACKEND_ORIGIN : window.location.origin);
+  : explicitBackendUrl || window.location.origin;
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
+  timeout: REQUEST_TIMEOUT_MS,
 });
 
 export const getAuthToken = () => {

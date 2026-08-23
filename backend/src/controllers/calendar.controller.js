@@ -17,6 +17,16 @@ function hasCalendarCredentials(user) {
   );
 }
 
+function getSafeDeadline(deadline, offsetDays = 1) {
+  const parsed = new Date(deadline);
+  if (!Number.isNaN(parsed.getTime())) return parsed;
+
+  const fallback = new Date();
+  fallback.setDate(fallback.getDate() + offsetDays);
+  fallback.setHours(9, 0, 0, 0);
+  return fallback;
+}
+
 // Sync micro-goal with Google Calendar
 const syncMicroGoalToCalendar = async (req, res) => {
   try {
@@ -44,7 +54,7 @@ const syncMicroGoalToCalendar = async (req, res) => {
     const eventData = {
       title: title || microGoal.title,
       description: description || microGoal.description,
-      deadline: deadline || microGoal.deadline,
+      deadline: getSafeDeadline(deadline || microGoal.deadline),
     };
 
     const calendarEvent = microGoal.calendarEventId
@@ -53,6 +63,7 @@ const syncMicroGoalToCalendar = async (req, res) => {
 
     // Update micro-goal with calendar event ID
     microGoal.calendarEventId = calendarEvent.id;
+    microGoal.deadline = eventData.deadline;
     await microGoal.save();
 
     res.status(200).json({
@@ -172,15 +183,17 @@ const syncAllMicroGoalsToCalendar = async (req, res) => {
     let syncedCount = 0;
     const results = [];
 
-    for (const microGoal of microGoals) {
+    for (const [index, microGoal] of microGoals.entries()) {
       try {
+        const deadline = getSafeDeadline(microGoal.deadline, index + 1);
         const calendarEvent = await createCalendarEvent(user.calendarTokens, {
           title: microGoal.title,
           description: microGoal.description,
-          deadline: microGoal.deadline,
+          deadline,
         });
 
         microGoal.calendarEventId = calendarEvent.id;
+        microGoal.deadline = deadline;
         await microGoal.save();
         syncedCount++;
         results.push({ microGoalId: microGoal._id, success: true });
