@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { getDashboard, completeGoal } from "../services/api";
+import { getDashboard, createGoal, completeGoal } from "../services/api";
 import { useAuth } from "../hooks/useAuth";
 import toast from "react-hot-toast";
 import MicroGoalTracker from "../components/MicroGoalTracker";
@@ -13,14 +13,27 @@ import {
   RefreshCw,
   Trophy,
   Calendar,
-  Clock
+  Clock,
+  Plus,
+  X
 } from "lucide-react";
+
+const EMPTY_GOAL_FORM = {
+  title: "",
+  description: "",
+  category: "other",
+  priority: "medium",
+  dueDate: "",
+};
 
 const Dashboard = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [completingId, setCompletingId] = useState(null);
+  const [showGoalForm, setShowGoalForm] = useState(false);
+  const [creatingGoal, setCreatingGoal] = useState(false);
+  const [goalForm, setGoalForm] = useState(EMPTY_GOAL_FORM);
   const { user } = useAuth();
 
   // fetch dashboard data
@@ -44,6 +57,34 @@ const Dashboard = () => {
   useEffect(() => {
     load();
   }, [load]);
+
+  const handleGoalInput = (event) => {
+    const { name, value } = event.target;
+    setGoalForm((current) => ({ ...current, [name]: value }));
+  };
+
+  const handleCreateGoal = async (event) => {
+    event.preventDefault();
+    const title = goalForm.title.trim();
+
+    if (title.length < 3) {
+      toast.error("Enter a goal title with at least 3 characters.");
+      return;
+    }
+
+    setCreatingGoal(true);
+    try {
+      await createGoal({ ...goalForm, title });
+      toast.success("Goal created. You can now generate its micro-goals.");
+      setGoalForm(EMPTY_GOAL_FORM);
+      setShowGoalForm(false);
+      await load();
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Could not create the goal.");
+    } finally {
+      setCreatingGoal(false);
+    }
+  };
 
   // mark goal complete
   const handleComplete = async (id) => {
@@ -110,22 +151,138 @@ const Dashboard = () => {
       {/* Header Section */}
       <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex justify-between items-start">
+          <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-start">
             <div>
               <h1 className="text-3xl md:text-4xl font-bold mb-2">
                 {getGreeting()}, {user?.fullName?.firstName || "Learner"}! 👋
               </h1>
               <p className="text-indigo-100">Track your learning journey and celebrate your progress</p>
             </div>
-            <div className="hidden md:flex items-center gap-2 bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full">
-              <Calendar className="w-4 h-4" />
-              <span className="text-sm">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="hidden md:flex items-center gap-2 bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full">
+                <Calendar className="w-4 h-4" />
+                <span className="text-sm">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowGoalForm((visible) => !visible)}
+                className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-50"
+              >
+                {showGoalForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                {showGoalForm ? "Cancel" : "Add Goal"}
+              </button>
             </div>
           </div>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {showGoalForm && (
+          <form onSubmit={handleCreateGoal} className="glass-card p-6 mb-8">
+            <div className="mb-5">
+              <h2 className="text-xl font-semibold text-gray-800">Create a main goal</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Add your learning goal, then generate a step-by-step micro-goal plan.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label htmlFor="goal-title" className="block text-sm font-medium text-gray-700 mb-1">
+                  Goal title
+                </label>
+                <input
+                  id="goal-title"
+                  name="title"
+                  value={goalForm.title}
+                  onChange={handleGoalInput}
+                  maxLength={120}
+                  placeholder="Example: Learn React fundamentals"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label htmlFor="goal-description" className="block text-sm font-medium text-gray-700 mb-1">
+                  Description
+                </label>
+                <textarea
+                  id="goal-description"
+                  name="description"
+                  value={goalForm.description}
+                  onChange={handleGoalInput}
+                  maxLength={1000}
+                  rows={3}
+                  placeholder="What do you want to achieve?"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="goal-category" className="block text-sm font-medium text-gray-700 mb-1">
+                  Category
+                </label>
+                <select
+                  id="goal-category"
+                  name="category"
+                  value={goalForm.category}
+                  onChange={handleGoalInput}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                >
+                  <option value="programming">Programming</option>
+                  <option value="languages">Languages</option>
+                  <option value="soft-skills">Soft skills</option>
+                  <option value="design">Design</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="goal-priority" className="block text-sm font-medium text-gray-700 mb-1">
+                  Priority
+                </label>
+                <select
+                  id="goal-priority"
+                  name="priority"
+                  value={goalForm.priority}
+                  onChange={handleGoalInput}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="goal-due-date" className="block text-sm font-medium text-gray-700 mb-1">
+                  Due date (optional)
+                </label>
+                <input
+                  id="goal-due-date"
+                  name="dueDate"
+                  type="date"
+                  value={goalForm.dueDate}
+                  onChange={handleGoalInput}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="submit"
+                disabled={creatingGoal || goalForm.title.trim().length < 3}
+                className="btn-primary inline-flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {creatingGoal ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                {creatingGoal ? "Creating..." : "Create Goal"}
+              </button>
+            </div>
+          </form>
+        )}
         
         {/* Stats Overview */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

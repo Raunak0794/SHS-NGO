@@ -6,8 +6,9 @@ const { callGemini, parseJSONFromText } = require("../utils/gemini");
 /* ============ GENERATE MICRO-GOALS FROM MAIN GOAL ============ */
 const generateMicroGoals = async (req, res) => {
   try {
-    const { goalId, numMicroGoals = 5 } = req.body;
+    const { goalId, numMicroGoals = 5 } = req.body || {};
     const userId = req.user?.id;
+    const requestedCount = Math.min(Math.max(Number(numMicroGoals) || 5, 1), 10);
 
     if (!goalId) {
       return res.status(400).json({ error: "goalId is required" });
@@ -19,10 +20,24 @@ const generateMicroGoals = async (req, res) => {
       return res.status(404).json({ error: "Goal not found" });
     }
 
+    // Reuse an existing plan so a slow client retry cannot create duplicates.
+    const existingMicroGoals = await MicroGoal.find({
+      userId,
+      parentGoalId: goalId,
+    }).sort({ createdAt: 1 });
+
+    if (existingMicroGoals.length > 0) {
+      return res.json({
+        success: true,
+        message: "This goal already has a micro-goal plan",
+        microGoals: existingMicroGoals,
+      });
+    }
+
     // Generate micro-goals using Gemini
-    let microGoals = await generateMicroGoalsAI(mainGoal, numMicroGoals);
+    let microGoals = await generateMicroGoalsAI(mainGoal, requestedCount);
     if (!microGoals.length) {
-      microGoals = generateFallbackMicroGoals(mainGoal, numMicroGoals);
+      microGoals = generateFallbackMicroGoals(mainGoal, requestedCount);
     }
 
     if (!microGoals.length) {

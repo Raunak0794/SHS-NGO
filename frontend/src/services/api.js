@@ -118,6 +118,7 @@ export const getMe = () => apiClient.get("/auth/me");
 
 // ================= DASHBOARD =================
 export const getDashboard = () => apiClient.get("/dashboard");
+export const createGoal = (goal) => apiClient.post("/dashboard/goals", goal);
 export const completeGoal = (id) => apiClient.post(`/dashboard/goals/${id}/complete`);
 
 // ================= AI =================
@@ -126,7 +127,7 @@ export const uploadMaterial = (formData) => apiClient.post("/ai/upload", formDat
 
 // ================= MICRO-GOALS =================
 export const generateMicroGoals = (goalId, numMicroGoals = 5) =>
-  apiClient.post("/microgoals/generate", { goalId, numMicroGoals });
+  apiClient.post("/microgoals/generate", { goalId, numMicroGoals }, { timeout: 30000 });
 
 export const getMicroGoals = (goalId) => apiClient.get(`/microgoals/goal/${goalId}`);
 export const getAllMicroGoals = () => apiClient.get("/microgoals/all");

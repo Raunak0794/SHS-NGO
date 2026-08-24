@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { apiClient } from "../services/api";
+import { apiClient, generateMicroGoals } from "../services/api";
 import { 
   CheckCircle, 
   Circle, 
@@ -10,7 +10,9 @@ import {
   ExternalLink,
   X,
   Edit3,
-  Send
+  Send,
+  Loader2,
+  Sparkles
 } from "lucide-react";
 
 const MicroGoalTracker = ({ goalId, onUpdate }) => {
@@ -19,6 +21,8 @@ const MicroGoalTracker = ({ goalId, onUpdate }) => {
   const [selectedGoal, setSelectedGoal] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
   const [calendarStatus, setCalendarStatus] = useState("");
+  const [goalActionStatus, setGoalActionStatus] = useState("");
+  const [generating, setGenerating] = useState(false);
 
   const fetchMicroGoals = useCallback(async () => {
     if (!goalId) return;
@@ -62,6 +66,28 @@ const MicroGoalTracker = ({ goalId, onUpdate }) => {
       }
     } catch (error) {
       console.error("Error updating micro-goal:", error);
+    }
+  };
+
+  const generatePlan = async () => {
+    if (!goalId || generating) return;
+
+    setGenerating(true);
+    setGoalActionStatus("Generating your micro-goal plan...");
+    try {
+      const res = await generateMicroGoals(goalId, 5);
+      const generatedGoals = res.data?.microGoals || [];
+      setMicroGoals(generatedGoals);
+      setGoalActionStatus(
+        res.data?.message || `Generated ${generatedGoals.length} micro-goals.`
+      );
+      if (onUpdate) await onUpdate();
+    } catch (error) {
+      setGoalActionStatus(
+        error.response?.data?.error || "Could not generate micro-goals. Please try again."
+      );
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -175,13 +201,35 @@ const MicroGoalTracker = ({ goalId, onUpdate }) => {
         {calendarStatus && (
           <p className="text-sm text-gray-600">{calendarStatus}</p>
         )}
+        {goalActionStatus && (
+          <p className="text-sm text-gray-600">{goalActionStatus}</p>
+        )}
       </div>
 
       {/* List */}
       <div className="space-y-3">
         {microGoals.length === 0 ? (
           <div className="glass-card p-8 text-center">
-            <p className="text-gray-500">No micro-goals yet. Generate them from your main goal!</p>
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100">
+              <Sparkles className="h-6 w-6 text-indigo-600" />
+            </div>
+            <h4 className="text-lg font-semibold text-gray-800">Turn this goal into a plan</h4>
+            <p className="mt-1 text-gray-500">
+              Generate five focused micro-goals with subtasks, deadlines, and resources.
+            </p>
+            <button
+              type="button"
+              onClick={generatePlan}
+              disabled={generating}
+              className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {generating ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {generating ? "Generating..." : "Generate 5 Micro-Goals"}
+            </button>
           </div>
         ) : (
           microGoals.map((mg) => (
