@@ -6,7 +6,7 @@ const trimTrailingSlash = (value) => String(value || "").trim().replace(/\/+$/, 
 const explicitApiUrl = trimTrailingSlash(import.meta.env.VITE_API_URL);
 const explicitBackendUrl = trimTrailingSlash(import.meta.env.VITE_BACKEND_URL);
 const explicitDevApiUrl = trimTrailingSlash(import.meta.env.VITE_DEV_API_URL);
-const REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 8000);
+const REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 25000);
 
 export const API_BASE_URL =
   import.meta.env.DEV

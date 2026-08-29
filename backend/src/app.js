@@ -26,29 +26,32 @@ const app = express();
 app.set("trust proxy", 1);
 
 function getFrontendOrigin() {
-  return process.env.FRONTEND_URL || "http://localhost:5173";
+  return (process.env.FRONTEND_URL || "http://localhost:5173").trim().replace(/\/+$/, "");
 }
 
 function getBackendOrigin() {
-  return process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`;
+  return (process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`).trim().replace(/\/+$/, "");
 }
 
 // ================= CORS CONFIGURATION =================
 const allowedOrigins = [
   "http://localhost:5173",
   process.env.FRONTEND_URL,
-  ...(process.env.FRONTEND_URLS || "").split(",").map((origin) => origin.trim().replace(/\/+$/, "")),
-].filter(Boolean);
+  ...(process.env.FRONTEND_URLS || "").split(","),
+]
+  .filter(Boolean)
+  .map((origin) => (typeof origin === "string" ? origin.trim().replace(/\/+$/, "") : origin));
 
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
 
+    const normalizedOrigin = String(origin).trim().replace(/\/+$/, "");
     const isAllowed = allowedOrigins.some((allowed) =>
-      allowed instanceof RegExp ? allowed.test(origin) : allowed === origin
+      allowed instanceof RegExp ? allowed.test(normalizedOrigin) : allowed === normalizedOrigin
     );
 
-    const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+    const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(normalizedOrigin);
 
     if (isAllowed || isLocalhost) {
       callback(null, true);

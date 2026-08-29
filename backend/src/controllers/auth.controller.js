@@ -66,10 +66,15 @@ function waitForMinimumDuration(startedAt, minimumMs = 350) {
 }
 
 function getCalendarOAuthClient() {
+    const callbackUrl =
+        process.env.GOOGLE_CALENDAR_REDIRECT_URI ||
+        process.env.GOOGLE_REDIRECT_URI ||
+        `${getBackendOrigin()}/api/auth/google/callback`;
+
     return new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID,
         process.env.GOOGLE_CLIENT_SECRET,
-        process.env.GOOGLE_CALENDAR_REDIRECT_URI || process.env.GOOGLE_REDIRECT_URI
+        callbackUrl
     );
 }
 
