@@ -64,7 +64,34 @@ const loginUserValidations = [
     }
 ]
 
+const forgotPasswordValidations = [
+    body('email')
+        .trim()
+        .isEmail()
+        .withMessage('Enter a valid email address'),
+    respondWithValidationErrors
+]
+
+const resetPasswordValidations = [
+    body('token')
+        .isString()
+        .matches(/^[a-f0-9]{64}$/i)
+        .withMessage('Password reset link is invalid'),
+    body('password')
+        .isLength({ min: 8, max: 128 })
+        .withMessage('Password must be between 8 and 128 characters')
+        .matches(/[a-z]/)
+        .withMessage('Password must include a lowercase letter')
+        .matches(/[A-Z]/)
+        .withMessage('Password must include an uppercase letter')
+        .matches(/[0-9]/)
+        .withMessage('Password must include a number'),
+    respondWithValidationErrors
+]
+
 module.exports = {
     registerUserValidations,
-    loginUserValidations
+    loginUserValidations,
+    forgotPasswordValidations,
+    resetPasswordValidations
 }

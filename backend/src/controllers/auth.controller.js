@@ -1,10 +1,15 @@
 const userModel = require('../models/user.model');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { randomUUID } = require('crypto');
+const { createHash, randomBytes, randomUUID } = require('crypto');
 const { google } = require('googleapis');
 const { getAuthCookieOptions, getClearAuthCookieOptions } = require('../utils/cookies');
 const { blacklistToken } = require('../utils/tokenBlacklist');
+const { isEmailConfigured, sendPasswordResetEmail } = require('../services/emailService');
+
+const PASSWORD_RESET_RESPONSE =
+    'If an account exists for that email, a password reset link has been sent.';
+const passwordResetAttempts = new Map();
 
 function getJwtSecret() {
     const secret = process.env.JWT_SECRET || "dev-secret-change-me";
@@ -19,7 +24,45 @@ function sanitizeUser(user) {
     if (!user) return null;
     const plainUser = user.toObject ? user.toObject() : user;
     delete plainUser.password;
+    delete plainUser.passwordResetTokenHash;
+    delete plainUser.passwordResetExpiresAt;
+    delete plainUser.tokenVersion;
     return plainUser;
+}
+
+function getPasswordResetTtlMinutes() {
+    return Math.min(
+        Math.max(Number(process.env.PASSWORD_RESET_TTL_MINUTES) || 30, 10),
+        120
+    );
+}
+
+function isPasswordResetRequestAllowed(email, ipAddress) {
+    const key = createHash('sha256')
+        .update(`${email}|${ipAddress || 'unknown'}`)
+        .digest('hex');
+    const now = Date.now();
+    const windowMs = 15 * 60 * 1000;
+    const current = passwordResetAttempts.get(key);
+
+    if (!current || current.expiresAt <= now) {
+        if (passwordResetAttempts.size >= 5000) {
+            passwordResetAttempts.delete(passwordResetAttempts.keys().next().value);
+        }
+        passwordResetAttempts.set(key, { count: 1, expiresAt: now + windowMs });
+        return true;
+    }
+
+    if (current.count >= 3) return false;
+    current.count += 1;
+    return true;
+}
+
+function waitForMinimumDuration(startedAt, minimumMs = 350) {
+    const remainingMs = minimumMs - (Date.now() - startedAt);
+    return remainingMs > 0
+        ? new Promise((resolve) => setTimeout(resolve, remainingMs))
+        : Promise.resolve();
 }
 
 function getCalendarOAuthClient() {
@@ -59,6 +102,7 @@ async function registerUser(req, res) {
             id: user._id,
             username: user.username,
             email: user.email,
+            tokenVersion: user.tokenVersion || 0,
         }, getJwtSecret(), { expiresIn: '1d', jwtid: randomUUID() });
 
         res.cookie("token", token, getAuthCookieOptions());
@@ -103,6 +147,7 @@ async function loginUser(req, res) {
             id: user._id,
             username: user.username,
             email: user.email,
+            tokenVersion: user.tokenVersion || 0,
         }, getJwtSecret(), { expiresIn: '1d', jwtid: randomUUID() });
 
         res.cookie('token', token, getAuthCookieOptions());
@@ -116,6 +161,103 @@ async function loginUser(req, res) {
     } catch (err) {
         console.error('Error in loginUser:', err);
         return res.status(500).json({ message: 'Internal server error' });
+    }
+}
+
+// ================= FORGOT / RESET PASSWORD =================
+async function forgotPassword(req, res) {
+    const startedAt = Date.now();
+    res.set('Cache-Control', 'no-store');
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const isProduction = process.env.NODE_ENV === 'production';
+    let previewResetUrl;
+    let emailJob;
+
+    try {
+        if (isPasswordResetRequestAllowed(email, req.ip)) {
+            const escapedEmail = email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const user = await userModel.findOne({
+                email: { $regex: `^${escapedEmail}$`, $options: 'i' },
+            });
+
+            if (user && (isEmailConfigured() || !isProduction)) {
+                const rawToken = randomBytes(32).toString('hex');
+                const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+                const expiresAt = new Date(
+                    Date.now() + getPasswordResetTtlMinutes() * 60 * 1000
+                );
+                const resetUrl = `${getFrontendOrigin()}/reset-password?token=${encodeURIComponent(rawToken)}`;
+
+                user.passwordResetTokenHash = tokenHash;
+                user.passwordResetExpiresAt = expiresAt;
+                await user.save();
+
+                if (isEmailConfigured()) {
+                    emailJob = async () => {
+                        try {
+                            await sendPasswordResetEmail({ to: user.email, resetUrl });
+                        } catch (emailError) {
+                            console.error('Password reset email failed:', emailError.message);
+                            await userModel.updateOne(
+                                { _id: user._id, passwordResetTokenHash: tokenHash },
+                                { $unset: { passwordResetTokenHash: '', passwordResetExpiresAt: '' } }
+                            ).catch(() => {});
+                        }
+                    };
+                } else {
+                    previewResetUrl = resetUrl;
+                }
+            } else if (user && !isEmailConfigured()) {
+                console.error('Password reset requested, but SMTP is not configured.');
+            }
+        }
+
+        await waitForMinimumDuration(startedAt);
+        const response = { message: PASSWORD_RESET_RESPONSE };
+        if (!isProduction && previewResetUrl) response.previewResetUrl = previewResetUrl;
+        res.status(200).json(response);
+
+        if (emailJob) setImmediate(emailJob);
+    } catch (error) {
+        console.error('Forgot password error:', error);
+        await waitForMinimumDuration(startedAt);
+        return res.status(200).json({ message: PASSWORD_RESET_RESPONSE });
+    }
+}
+
+async function resetPassword(req, res) {
+    try {
+        res.set('Cache-Control', 'no-store');
+        const tokenHash = createHash('sha256')
+            .update(String(req.body.token))
+            .digest('hex');
+        const passwordHash = await bcrypt.hash(req.body.password, 12);
+        const user = await userModel.findOneAndUpdate(
+            {
+                passwordResetTokenHash: tokenHash,
+                passwordResetExpiresAt: { $gt: new Date() },
+            },
+            {
+                $set: { password: passwordHash },
+                $unset: { passwordResetTokenHash: '', passwordResetExpiresAt: '' },
+                $inc: { tokenVersion: 1 },
+            },
+            { new: true }
+        );
+
+        if (!user) {
+            return res.status(400).json({
+                message: 'This password reset link is invalid or has expired.',
+            });
+        }
+
+        res.clearCookie('token', getClearAuthCookieOptions());
+        return res.status(200).json({
+            message: 'Password reset successfully. You can now sign in.',
+        });
+    } catch (error) {
+        console.error('Reset password error:', error);
+        return res.status(500).json({ message: 'Could not reset password' });
     }
 }
 
@@ -203,19 +345,74 @@ async function googleCallback(req, res) {
             },
         });
 
-        res.redirect(`${getFrontendOrigin()}/dashboard?calendar=connected`);
+        // Refresh the SHS session before returning from the external OAuth flow.
+        // This keeps cookie-based Google logins authenticated after the full-page redirect.
+        const sessionToken = jwt.sign({
+            id: user._id,
+            username: user.username,
+            email: user.email,
+            tokenVersion: user.tokenVersion || 0,
+        }, getJwtSecret(), { expiresIn: '1d', jwtid: randomUUID() });
+
+        res.cookie('token', sessionToken, getAuthCookieOptions());
+        return res.redirect(`${getFrontendOrigin()}/dashboard?calendar=connected`);
     } catch (err) {
         console.error("Google calendar callback error:", err);
-        res.redirect(`${getFrontendOrigin()}/dashboard?calendar=error`);
+        return res.redirect(`${getFrontendOrigin()}/dashboard?calendar=error`);
     }
 }
+
+const updateProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const {
+      classLevel,
+      subjects,
+      learningGoals,
+      explanationLevel,
+      dailyStudyGoalMinutes,
+      onboardingCompleted,
+      fullName,
+    } = req.body || {};
+
+    const updates = {};
+    if (classLevel) updates.classLevel = classLevel;
+    if (Array.isArray(subjects)) updates.subjects = subjects;
+    if (Array.isArray(learningGoals)) updates.learningGoals = learningGoals;
+    if (explanationLevel) updates.explanationLevel = explanationLevel;
+    if (dailyStudyGoalMinutes) updates.dailyStudyGoalMinutes = Number(dailyStudyGoalMinutes);
+    if (onboardingCompleted !== undefined) updates.onboardingCompleted = Boolean(onboardingCompleted);
+    if (fullName) updates.fullName = fullName;
+
+    const user = await userModel.findByIdAndUpdate(
+      userId,
+      { $set: updates },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.status(200).json({
+      message: "Profile updated successfully",
+      user: sanitizeUser(user),
+    });
+  } catch (err) {
+    console.error("Update profile error:", err);
+    return res.status(500).json({ message: "Could not update profile" });
+  }
+};
 
 // ================= EXPORT =================
 module.exports = {
     registerUser,
     loginUser,
+    forgotPassword,
+    resetPassword,
     logoutUser,
     getGoogleAuthUrl,
     googleCallback,
-    getMe
+    getMe,
+    updateProfile,
 };

@@ -67,6 +67,13 @@ async function check(name, path, options = {}) {
   return data;
 }
 
+const DocumentChunk = require("../src/models/DocumentChunk");
+const Conversation = require("../src/models/Conversation");
+const Message = require("../src/models/Message");
+const StudentTopicProgress = require("../src/models/StudentTopicProgress");
+const StudentMistake = require("../src/models/StudentMistake");
+const SavedRevision = require("../src/models/SavedRevision");
+
 async function cleanup() {
   if (!userId || !process.env.MONGO_URI) return;
 
@@ -79,6 +86,12 @@ async function cleanup() {
     MicroGoal.deleteMany({ userId }),
     StudySession.deleteMany({ userId }),
     Goal.deleteMany({ userId }),
+    DocumentChunk.deleteMany({ userId }),
+    Conversation.deleteMany({ userId }),
+    Message.deleteMany({ userId }),
+    StudentTopicProgress.deleteMany({ userId }),
+    StudentMistake.deleteMany({ userId }),
+    SavedRevision.deleteMany({ userId }),
   ]);
   await User.deleteOne({ _id: userId, email: credentials.email });
   await mongoose.disconnect();
@@ -204,6 +217,113 @@ async function run() {
   await check("Calendar disconnected state", "/calendar/events", {
     expected: [400],
     validate: (data) => assert(/not connected/i.test(data?.message || ""), "Calendar disconnected response is unclear"),
+  });
+
+  // ============ NEW RAG & ADAPTIVE COPILOT TESTS ============
+  await check("Update profile", "/auth/profile", {
+    method: "PUT",
+    body: { classLevel: "Class 9", subjects: ["Mathematics", "Science", "English"], onboardingCompleted: true },
+    validate: (data) => assert(data?.user?.classLevel === "Class 9", "Profile update failed"),
+  });
+
+  const materialsList = await check("List materials", "/materials", {
+    validate: (data) => assert(Array.isArray(data?.materials), "Materials list is not an array"),
+  });
+
+  await check("Semantic search", "/materials/search/semantic", {
+    method: "POST",
+    body: { query: "How does light and energy work in plants?" },
+    validate: (data) => assert(Array.isArray(data?.results), "Semantic search response is invalid"),
+  });
+
+  const chatResp = await check("RAG Chat message", "/chat/message", {
+    method: "POST",
+    body: { message: "Explain photosynthesis simply from my uploaded notes.", mode: "material" },
+    validate: (data) => assert(data?.message?.content && data?.conversationId, "Chat message failed"),
+  });
+  const conversationId = chatResp.conversationId;
+
+  await check("List conversations", "/chat/conversations", {
+    validate: (data) => assert(data?.conversations?.length > 0, "Conversations list is empty"),
+  });
+
+  await check("Explain Simpler", "/chat/simplify", {
+    method: "POST",
+    body: { previousQuestion: "What is photosynthesis?", previousAnswer: "Chemical synthesis using light", topic: "Photosynthesis" },
+    validate: (data) => assert(data?.answer, "Explain simpler failed"),
+  });
+
+  await check("Homework Helper", "/chat/homework", {
+    method: "POST",
+    body: { problem: "Solve for x: 2x + 6 = 14", stepType: "hint", subject: "Mathematics" },
+    validate: (data) => assert(data?.guidance, "Homework helper failed"),
+  });
+
+  await check("Answer Checker", "/chat/check-answer", {
+    method: "POST",
+    body: { question: "What is photosynthesis?", studentAnswer: "Plants make glucose using sunlight and CO2", subject: "Science" },
+    validate: (data) => assert(data?.status, "Answer checker failed"),
+  });
+
+  const practiceQuiz = await check("Adaptive Quiz Generation", "/practice/quiz/generate", {
+    method: "POST",
+    body: { subject: "Science", numQuestions: 3, difficulty: "adaptive" },
+    validate: (data) => assert(data?.questions?.length > 0, "Practice quiz generation failed"),
+  });
+
+  if (practiceQuiz?.questions?.length > 0) {
+    const q0 = practiceQuiz.questions[0];
+    await check("Submit Quiz Answers", "/practice/quiz/submit", {
+      method: "POST",
+      body: {
+        subject: "Science",
+        answers: [
+          {
+            _id: q0._id,
+            question: q0.question,
+            options: q0.options,
+            userAnswer: q0.options[1], // intentional answer
+            correctAnswer: q0.correctAnswer,
+            topic: q0.topic,
+          },
+        ],
+      },
+      validate: (data) => assert(data?.totalQuestions === 1, "Quiz submit failed"),
+    });
+  }
+
+  await check("Mistake Book", "/practice/mistakes", {
+    validate: (data) => assert(Array.isArray(data?.mistakes), "Mistake book is not an array"),
+  });
+
+  await check("Generate Flashcards", "/practice/flashcards/generate", {
+    method: "POST",
+    body: { subject: "Science", topic: "Plant Biology" },
+    validate: (data) => assert(Array.isArray(data?.flashcards), "Flashcards response is invalid"),
+  });
+
+  await check("Generate Revision Notes", "/practice/revision-notes", {
+    method: "POST",
+    body: { title: "Photosynthesis Quick Notes", subject: "Science", type: "notes" },
+    validate: (data) => assert(data?.revision?._id, "Revision notes creation failed"),
+  });
+
+  await check("Get Revision Notes", "/practice/revision-notes", {
+    validate: (data) => assert(Array.isArray(data?.notes), "Revision notes list is invalid"),
+  });
+
+  await check("Progress Dashboard", "/progress/dashboard", {
+    validate: (data) => assert(data?.stats && Array.isArray(data?.subjectProgress), "Progress dashboard failed"),
+  });
+
+  await check("Study Recommendation", "/progress/recommendation", {
+    validate: (data) => assert(data?.recommendations?.priority, "Study recommendation failed"),
+  });
+
+  await check("Generate Exam Study Plan", "/progress/study-plan", {
+    method: "POST",
+    body: { examName: "Mid-Term Science Exam", examDate: new Date(Date.now() + 7 * 86400000).toISOString(), subject: "Science", chapters: ["Light", "Plants", "Chemicals"], dailyMinutes: 45 },
+    validate: (data) => assert(data?.plan?.schedule?.length > 0, "Study plan failed"),
   });
 
   await check("Logout", "/auth/logout", {

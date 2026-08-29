@@ -74,6 +74,11 @@ export default function Login() {
               {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
+          <div className="text-right">
+            <Link to="/forgot-password" className="text-sm font-medium text-blue-600 hover:underline">
+              Forgot password?
+            </Link>
+          </div>
           <button
             type="submit"
             disabled={loading}

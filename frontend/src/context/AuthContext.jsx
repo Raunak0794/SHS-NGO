@@ -4,6 +4,7 @@ import {
   login as loginApi,
   register as registerApi,
   logout as logoutApi,
+  updateProfile,
   setAuthToken,
   getAuthToken,
 } from '../services/api';
@@ -40,9 +41,15 @@ export const AuthProvider = ({ children }) => {
       return;
     }
 
-    // Public pages should not wait for the backend when there is no saved login.
-    if (!getAuthToken()) {
+    const publicPaths = new Set(['/', '/login', '/register', '/forgot-password', '/reset-password']);
+    const isPublicPath = publicPaths.has(window.location.pathname);
+    const hasStoredToken = Boolean(getAuthToken());
+
+    // A Google login is stored in an HTTP-only backend cookie, not local storage.
+    // Restore it in the background on public pages, but wait for it on protected pages.
+    if (!hasStoredToken && isPublicPath) {
       setLoading(false);
+      fetchUser().catch(() => {});
       return;
     }
 
@@ -116,6 +123,20 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const updateUserProfile = async (profileData) => {
+    try {
+      const response = await updateProfile(profileData);
+      if (response.data?.user) {
+        setUser(response.data.user);
+      }
+      return { success: true, user: response.data?.user };
+    } catch (error) {
+      const message = error.response?.data?.message || 'Could not update profile';
+      toast.error(message);
+      return { success: false, message };
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -126,6 +147,7 @@ export const AuthProvider = ({ children }) => {
         register,
         logout,
         fetchUser,
+        updateUserProfile,
       }}
     >
       {children}

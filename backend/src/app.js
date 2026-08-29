@@ -17,6 +17,10 @@ const aiRoutes = require("./routes/ai.route");
 const microgoalsRoutes = require("./routes/microgoals.route");
 const calendarRoutes = require("./routes/calendar.route");
 const studyRoutes = require("./routes/study.route");
+const chatRoutes = require("./routes/chat.route");
+const materialsRoutes = require("./routes/materials.route");
+const practiceRoutes = require("./routes/practice.route");
+const progressRoutes = require("./routes/progress.route");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -115,7 +119,12 @@ app.get('/auth/google/callback',
   (req, res) => {
     const user = req.user;
     const token = jwt.sign(
-      { id: user._id, username: user.username, email: user.email },
+      {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        tokenVersion: user.tokenVersion || 0,
+      },
       process.env.JWT_SECRET || "dev-secret-change-me",
       { expiresIn: '1d', jwtid: randomUUID() }
     );
@@ -144,6 +153,10 @@ app.use("/api/ai", aiRoutes);
 app.use("/api/microgoals", microgoalsRoutes);
 app.use("/api/calendar", calendarRoutes);
 app.use("/api/study", studyRoutes);
+app.use("/api/chat", chatRoutes);
+app.use("/api/materials", materialsRoutes);
+app.use("/api/practice", practiceRoutes);
+app.use("/api/progress", progressRoutes);
 
 app.use((req, res) => {
   res.status(404).json({

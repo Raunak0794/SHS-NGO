@@ -115,6 +115,10 @@ export const login = (credentials) => {
 };
 export const logout = () => apiClient.post("/auth/logout");
 export const getMe = () => apiClient.get("/auth/me");
+export const requestPasswordReset = (email) =>
+  apiClient.post("/auth/forgot-password", { email });
+export const resetPassword = (token, password) =>
+  apiClient.post("/auth/reset-password", { token, password });
 
 // ================= DASHBOARD =================
 export const getDashboard = () => apiClient.get("/dashboard");
@@ -162,5 +166,49 @@ export const removeMicroGoalFromCalendar = (microGoalId) =>
 export const getCalendarEvents = (timeMin, timeMax) =>
   apiClient.get("/calendar/events", { params: { timeMin, timeMax } });
 export const syncAllMicroGoalsToCalendar = () => apiClient.post("/calendar/sync-all");
+
+// ================= PROFILE & ONBOARDING =================
+export const updateProfile = (data) => apiClient.put("/auth/profile", data);
+
+// ================= RAG CHAT =================
+export const sendChatMessage = (data) => apiClient.post("/chat/message", data);
+export const getConversations = () => apiClient.get("/chat/conversations");
+export const createConversation = (data) => apiClient.post("/chat/conversations", data);
+export const getConversation = (id) => apiClient.get(`/chat/conversations/${id}`);
+export const deleteConversation = (id) => apiClient.delete(`/chat/conversations/${id}`);
+export const saveMessage = (id) => apiClient.post(`/chat/messages/${id}/save`);
+export const getSavedMessages = () => apiClient.get("/chat/saved");
+export const simplifyExplanation = (data) => apiClient.post("/chat/simplify", data);
+export const homeworkHelper = (data) => apiClient.post("/chat/homework", data);
+export const checkAnswer = (data) => apiClient.post("/chat/check-answer", data);
+
+// ================= STUDY MATERIALS & VECTOR SEARCH =================
+export const getMaterials = (params) => apiClient.get("/materials", { params });
+export const uploadMaterialWithRAG = (formData) =>
+  apiClient.post("/materials/upload", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 60000,
+  });
+export const getMaterialDetails = (id) => apiClient.get(`/materials/${id}`);
+export const updateMaterial = (id, data) => apiClient.patch(`/materials/${id}`, data);
+export const deleteMaterial = (id) => apiClient.delete(`/materials/${id}`);
+export const semanticSearch = (data) => apiClient.post("/materials/search/semantic", data);
+
+// ================= PRACTICE HUB & ADAPTIVE QUIZZES =================
+export const generateQuiz = (data) => apiClient.post("/practice/quiz/generate", data);
+export const submitQuiz = (data) => apiClient.post("/practice/quiz/submit", data);
+export const getMistakes = (params) => apiClient.get("/practice/mistakes", { params });
+export const resolveMistake = (id) => apiClient.delete(`/practice/mistakes/${id}`);
+export const generateFlashcards = (data) => apiClient.post("/practice/flashcards/generate", data);
+export const reviewFlashcard = (data) => apiClient.post("/practice/flashcards/review", data);
+export const generateRevisionNotes = (data) => apiClient.post("/practice/revision-notes", data);
+export const getRevisionNotes = () => apiClient.get("/practice/revision-notes");
+export const deleteRevisionNote = (id) => apiClient.delete(`/practice/revision-notes/${id}`);
+
+// ================= PROGRESS & STUDY PLAN =================
+export const getProgressDashboard = () => apiClient.get("/progress/dashboard");
+export const getStudyRecommendation = () => apiClient.get("/progress/recommendation");
+export const generateStudyPlan = (data) => apiClient.post("/progress/study-plan", data);
+export const syncCalendarPlan = (data) => apiClient.post("/progress/study-plan/sync-calendar", data);
 
 export default apiClient;

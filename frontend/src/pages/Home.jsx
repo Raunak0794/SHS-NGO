@@ -1,219 +1,318 @@
-import React from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "../hooks/useAuth";
+import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import {
-  Brain,
-  Calendar,
-  Target,
   Sparkles,
-  TrendingUp,
-  Award,
-  ArrowRight,
-  Rocket,
   BookOpen,
-  Zap,
-  LogIn,
-  UserPlus
+  Brain,
+  HelpCircle,
+  Award,
+  UploadCloud,
+  Flame,
+  Clock,
+  ArrowRight,
+  CheckCircle2,
+  Calendar,
 } from "lucide-react";
+import { useAuth } from "../hooks/useAuth";
+import { getProgressDashboard, getStudyRecommendation } from "../services/api";
+import WhatShouldIStudyCard from "../components/WhatShouldIStudyCard";
+import OnboardingModal from "../components/OnboardingModal";
+import HomeworkHelperModal from "../components/HomeworkHelperModal";
+import AnswerCheckerModal from "../components/AnswerCheckerModal";
 
-const Home = () => {
-  const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+const SUBJECT_ICONS = {
+  Mathematics: "📐",
+  Science: "🔬",
+  English: "📖",
+  "Social Science": "🌍",
+  Hindi: "🇮🇳",
+  "Computer Science": "💻",
+  General: "📚",
+};
 
-  const features = [
-    {
-      icon: Brain,
-      title: "AI-Powered Learning",
-      description: "Personalized study plans and smart recommendations powered by Gemini AI",
-      color: "from-purple-500 to-indigo-500"
-    },
-    {
-      icon: Target,
-      title: "Smart Goal Tracking",
-      description: "Break down big goals into manageable micro-goals with progress tracking",
-      color: "from-green-500 to-emerald-500"
-    },
-    {
-      icon: Calendar,
-      title: "Calendar Integration",
-      description: "Sync your micro-goals with Google Calendar for better time management",
-      color: "from-blue-500 to-cyan-500"
-    },
-    {
-      icon: TrendingUp,
-      title: "Weekly Reviews",
-      description: "Get AI-generated insights and track your learning consistency",
-      color: "from-orange-500 to-red-500"
-    },
-    {
-      icon: Award,
-      title: "Gamification",
-      description: "Earn badges and maintain streaks as you progress through your goals",
-      color: "from-yellow-500 to-amber-500"
-    },
-    {
-      icon: Zap,
-      title: "Study Materials",
-      description: "Upload and analyze study materials with automatic summary generation",
-      color: "from-pink-500 to-rose-500"
+export default function Home() {
+  const { user } = useAuth();
+  const [dashboardData, setDashboardData] = useState(null);
+  const [recommendation, setRecommendation] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  // Modals
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showHomeworkModal, setShowHomeworkModal] = useState(false);
+  const [showAnswerModal, setShowAnswerModal] = useState(false);
+
+  useEffect(() => {
+    // Open onboarding if new user or onboarding not done
+    if (user && !user.onboardingCompleted && !user.classLevel) {
+      setShowOnboarding(true);
     }
-  ];
+  }, [user]);
 
-  const stats = [
-    { value: "1000+", label: "Active Learners" },
-    { value: "5000+", label: "Goals Achieved" },
-    { value: "95%", label: "Success Rate" },
-    { value: "24/7", label: "AI Support" }
-  ];
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [dashRes, recRes] = await Promise.all([
+        getProgressDashboard().catch(() => ({ data: {} })),
+        getStudyRecommendation().catch(() => ({ data: {} })),
+      ]);
+      setDashboardData(dashRes.data || {});
+      setRecommendation(recRes.data?.recommendations || null);
+    } catch (err) {
+      console.error("Load home data error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50 flex items-center justify-center px-4">
-        <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-sm font-medium mb-6">
-            <Sparkles className="w-4 h-4 mr-2" />
-            AI-Powered Learning Platform
-          </div>
-          <h1 className="text-5xl md:text-7xl font-bold mb-6">
-            <span className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
-              Welcome to SHS NGO
-            </span>
-          </h1>
-          <p className="text-xl text-gray-600 max-w-2xl mx-auto mb-10">
-            Transform your study journey with personalized AI insights, smart goal tracking,
-            and seamless calendar integration. Learn smarter, not harder.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button
-              onClick={() => navigate('/login')}
-              className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-semibold rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
-            >
-              <LogIn className="w-5 h-5" />
-              Login
-            </button>
-            <button
-              onClick={() => navigate('/register')}
-              className="px-8 py-3 bg-white/80 backdrop-blur-sm border border-gray-200 hover:bg-white/90 text-gray-700 font-semibold rounded-xl transition-all duration-200 shadow-md flex items-center justify-center gap-2"
-            >
-              <UserPlus className="w-5 h-5" />
-              Create Account
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const studentSubjects = user?.subjects?.length
+    ? user.subjects
+    : ["Mathematics", "Science", "English", "Social Science"];
+
+  const stats = dashboardData?.stats || {
+    accuracy: 0,
+    topicsMasteredCount: 0,
+    streak: user?.streak || 0,
+    unreviewedMistakesCount: 0,
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
-      {/* Hero Section */}
-      <div className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-pink-500/10" />
-        <div className="absolute top-20 left-10 w-72 h-72 bg-indigo-300 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-float" />
-        <div className="absolute bottom-20 right-10 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-float animation-delay-2000" />
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-32">
-          <div className="text-center">
-            <div className="inline-flex items-center px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-sm font-medium mb-6">
-              <Sparkles className="w-4 h-4 mr-2" />
-              AI-Powered Learning Platform
+    <div className="min-h-screen bg-slate-50/50 pb-16">
+      {/* Onboarding Modal */}
+      <OnboardingModal
+        isOpen={showOnboarding}
+        onClose={() => {
+          setShowOnboarding(false);
+          loadData();
+        }}
+      />
+
+      {/* Homework Helper Modal */}
+      <HomeworkHelperModal
+        isOpen={showHomeworkModal}
+        onClose={() => setShowHomeworkModal(false)}
+      />
+
+      {/* Answer Checker Modal */}
+      <AnswerCheckerModal
+        isOpen={showAnswerModal}
+        onClose={() => setShowAnswerModal(false)}
+      />
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-8">
+        {/* Welcome Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
+                Welcome back, {user?.fullName?.firstName || "Learner"}! 👋
+              </h1>
+              {user?.classLevel && (
+                <span className="rounded-full bg-indigo-100 px-3 py-0.5 text-xs font-bold text-indigo-700 border border-indigo-200">
+                  {user.classLevel}
+                </span>
+              )}
             </div>
-            <h1 className="text-5xl md:text-7xl font-bold mb-6">
-              <span className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
-                Master Your Learning
-              </span>
-              <br />
-              <span className="text-gray-800">with AI Assistance</span>
-            </h1>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto mb-10">
-              Transform your study journey with personalized AI insights, smart goal tracking,
-              and seamless calendar integration. Learn smarter, not harder.
+            <p className="text-sm text-gray-500 mt-1">
+              Here is your daily study copilot overview. Ready to learn something new today?
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <button
-                onClick={() => navigate('/studysphereai')}
-                className="group px-8 py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-semibold rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
-              >
-                Get Started
-                <Rocket className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-              </button>
-              <button
-                onClick={() => navigate('/dashboard')}
-                className="px-8 py-3 bg-white/80 backdrop-blur-sm border border-gray-200 hover:bg-white/90 text-gray-700 font-semibold rounded-xl transition-all duration-200 shadow-md flex items-center justify-center gap-2"
-              >
-                View Dashboard
-                <ArrowRight className="w-5 h-5" />
-              </button>
+          </div>
+
+          {/* Streak & Daily Goal Pill */}
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <div className="flex items-center gap-1.5 rounded-2xl bg-amber-50 px-3.5 py-2 border border-amber-200 text-amber-800 text-xs font-bold shadow-xs">
+              <Flame className="h-4 w-4 text-amber-500 fill-amber-500" />
+              <span>{stats.streak || 0} Day Streak</span>
+            </div>
+            <div className="flex items-center gap-1.5 rounded-2xl bg-indigo-50 px-3.5 py-2 border border-indigo-100 text-indigo-800 text-xs font-bold shadow-xs">
+              <Clock className="h-4 w-4 text-indigo-600" />
+              <span>{user?.dailyStudyGoalMinutes || 30}m Goal</span>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Stats Section */}
-      <div className="bg-white/50 backdrop-blur-sm py-12 border-y border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            {stats.map((stat, index) => (
-              <div key={index} className="text-center">
-                <div className="text-3xl md:text-4xl font-bold text-indigo-600">{stat.value}</div>
-                <div className="text-gray-600 mt-2">{stat.label}</div>
+        {/* Priority Recommendation Card ("What Should I Study?") */}
+        <WhatShouldIStudyCard
+          recommendation={recommendation}
+          loading={loading}
+        />
+
+        {/* Quick Action Tools Bar */}
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-gray-400 mb-3">
+            Quick Study Tools
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <Link
+              to="/tutor"
+              className="group flex flex-col items-center text-center p-4 rounded-2xl bg-white border border-gray-200/80 shadow-xs hover:border-indigo-500 hover:shadow-md transition-all"
+            >
+              <div className="p-3 rounded-2xl bg-indigo-50 text-indigo-600 mb-2 group-hover:scale-110 transition-transform">
+                <Sparkles className="h-6 w-6" />
               </div>
-            ))}
+              <span className="text-xs font-bold text-gray-800">Ask AI Tutor</span>
+              <span className="text-[10px] text-gray-400 mt-0.5">Instant answers</span>
+            </Link>
+
+            <Link
+              to="/practice?tab=quiz"
+              className="group flex flex-col items-center text-center p-4 rounded-2xl bg-white border border-gray-200/80 shadow-xs hover:border-purple-500 hover:shadow-md transition-all"
+            >
+              <div className="p-3 rounded-2xl bg-purple-50 text-purple-600 mb-2 group-hover:scale-110 transition-transform">
+                <Brain className="h-6 w-6" />
+              </div>
+              <span className="text-xs font-bold text-gray-800">Practice Quiz</span>
+              <span className="text-[10px] text-gray-400 mt-0.5">Adaptive tests</span>
+            </Link>
+
+            <Link
+              to="/materials"
+              className="group flex flex-col items-center text-center p-4 rounded-2xl bg-white border border-gray-200/80 shadow-xs hover:border-blue-500 hover:shadow-md transition-all"
+            >
+              <div className="p-3 rounded-2xl bg-blue-50 text-blue-600 mb-2 group-hover:scale-110 transition-transform">
+                <UploadCloud className="h-6 w-6" />
+              </div>
+              <span className="text-xs font-bold text-gray-800">Upload Notes</span>
+              <span className="text-[10px] text-gray-400 mt-0.5">PDFs & documents</span>
+            </Link>
+
+            <button
+              type="button"
+              onClick={() => setShowHomeworkModal(true)}
+              className="group flex flex-col items-center text-center p-4 rounded-2xl bg-white border border-gray-200/80 shadow-xs hover:border-amber-500 hover:shadow-md transition-all"
+            >
+              <div className="p-3 rounded-2xl bg-amber-50 text-amber-600 mb-2 group-hover:scale-110 transition-transform">
+                <HelpCircle className="h-6 w-6" />
+              </div>
+              <span className="text-xs font-bold text-gray-800">Homework Helper</span>
+              <span className="text-[10px] text-gray-400 mt-0.5">Hints & steps</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowAnswerModal(true)}
+              className="group flex flex-col items-center text-center p-4 rounded-2xl bg-white border border-gray-200/80 shadow-xs hover:border-green-500 hover:shadow-md transition-all col-span-2 sm:col-span-1"
+            >
+              <div className="p-3 rounded-2xl bg-green-50 text-green-600 mb-2 group-hover:scale-110 transition-transform">
+                <Award className="h-6 w-6" />
+              </div>
+              <span className="text-xs font-bold text-gray-800">Check My Answer</span>
+              <span className="text-[10px] text-gray-400 mt-0.5">Score & feedback</span>
+            </button>
           </div>
         </div>
-      </div>
 
-      {/* Features Section */}
-      <div className="py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-800 mb-4">
-              Powerful Features for <span className="gradient-text">Modern Learners</span>
+        {/* My Subjects Overview */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-400">
+              My Subjects
             </h2>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              Everything you need to stay organized, motivated, and on track with your learning goals
-            </p>
+            <Link
+              to="/subjects"
+              className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
+            >
+              View All <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {features.map((feature, index) => {
-              const Icon = feature.icon;
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {studentSubjects.map((sub) => {
+              const progressEntry = (dashboardData?.subjectProgress || []).find(
+                (p) => p.subject.toLowerCase() === sub.toLowerCase()
+              );
+              const mastery = progressEntry?.mastery || 50;
+
               return (
                 <div
-                  key={index}
-                  className="group glass-card p-6 hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 cursor-pointer"
-                  onClick={() => navigate('/studysphereai')}
+                  key={sub}
+                  className="rounded-3xl bg-white p-5 border border-gray-200/80 shadow-xs hover:shadow-md hover:border-indigo-200 transition-all flex flex-col justify-between"
                 >
-                  <div className={`w-14 h-14 rounded-xl bg-gradient-to-r ${feature.color} flex items-center justify-center mb-5 group-hover:scale-110 transition-transform duration-300`}>
-                    <Icon className="w-7 h-7 text-white" />
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-2xl">{SUBJECT_ICONS[sub] || "📚"}</span>
+                      <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
+                        {mastery}% Mastered
+                      </span>
+                    </div>
+
+                    <h3 className="font-bold text-gray-800 text-base">{sub}</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {progressEntry?.topicsCount || 0} topics recorded
+                    </p>
+
+                    <div className="w-full bg-gray-100 h-2 rounded-full mt-4 overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-indigo-500 to-purple-500"
+                        style={{ width: `${mastery}%` }}
+                      />
+                    </div>
                   </div>
-                  <h3 className="text-xl font-semibold text-gray-800 mb-3">{feature.title}</h3>
-                  <p className="text-gray-600 leading-relaxed">{feature.description}</p>
+
+                  <div className="mt-5 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+                    <Link
+                      to={`/tutor?subject=${encodeURIComponent(sub)}`}
+                      className="text-xs font-semibold text-gray-600 hover:text-indigo-600 py-1"
+                    >
+                      Ask AI
+                    </Link>
+                    <Link
+                      to={`/practice?tab=quiz&subject=${encodeURIComponent(sub)}`}
+                      className="text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-xl transition"
+                    >
+                      Practice
+                    </Link>
+                  </div>
                 </div>
               );
             })}
           </div>
         </div>
-      </div>
 
-      {/* CTA Section */}
-      <div className="py-20 bg-gradient-to-r from-indigo-600 to-purple-600">
-        <div className="max-w-4xl mx-auto text-center px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-            Ready to Transform Your Learning?
-          </h2>
-          <p className="text-xl text-indigo-100 mb-8">
-            Join thousands of learners who are already using AI to achieve their goals
-          </p>
-          <button
-            onClick={() => navigate('/studysphereai')}
-            className="px-8 py-3 bg-white text-indigo-600 font-semibold rounded-xl hover:shadow-xl transition-all duration-200 transform hover:-translate-y-0.5 flex items-center justify-center gap-2 mx-auto"
+        {/* Learning Stats & Mistake Book alert */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="rounded-3xl bg-white p-5 border border-gray-200/80 shadow-xs flex items-center gap-4">
+            <div className="p-3.5 rounded-2xl bg-green-50 text-green-600 shrink-0">
+              <CheckCircle2 className="h-7 w-7" />
+            </div>
+            <div>
+              <div className="text-2xl font-black text-gray-900">{stats.accuracy}%</div>
+              <div className="text-xs font-semibold text-gray-500">Practice Accuracy</div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl bg-white p-5 border border-gray-200/80 shadow-xs flex items-center gap-4">
+            <div className="p-3.5 rounded-2xl bg-indigo-50 text-indigo-600 shrink-0">
+              <Brain className="h-7 w-7" />
+            </div>
+            <div>
+              <div className="text-2xl font-black text-gray-900">{stats.topicsMasteredCount}</div>
+              <div className="text-xs font-semibold text-gray-500">Topics Mastered</div>
+            </div>
+          </div>
+
+          <Link
+            to="/practice?tab=mistakes"
+            className="rounded-3xl bg-white p-5 border border-gray-200/80 shadow-xs flex items-center justify-between hover:border-amber-400 hover:shadow-md transition-all group"
           >
-            Start Learning Now
-            <BookOpen className="w-5 h-5" />
-          </button>
+            <div className="flex items-center gap-4">
+              <div className="p-3.5 rounded-2xl bg-amber-50 text-amber-600 shrink-0 group-hover:scale-105 transition-transform">
+                <BookOpen className="h-7 w-7" />
+              </div>
+              <div>
+                <div className="text-2xl font-black text-amber-700">
+                  {stats.unreviewedMistakesCount}
+                </div>
+                <div className="text-xs font-semibold text-gray-500">Mistakes to Review</div>
+              </div>
+            </div>
+            <ArrowRight className="h-5 w-5 text-gray-400 group-hover:text-amber-600 group-hover:translate-x-1 transition-all" />
+          </Link>
         </div>
       </div>
     </div>
   );
-};
-
-export default Home;
+}

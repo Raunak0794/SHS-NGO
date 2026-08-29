@@ -7,8 +7,11 @@ const router = express.Router();
 
 router.post('/register', validators.registerUserValidations, authController.registerUser);
 router.post('/login', validators.loginUserValidations, authController.loginUser);
+router.post('/forgot-password', validators.forgotPasswordValidations, authController.forgotPassword);
+router.post('/reset-password', validators.resetPasswordValidations, authController.resetPassword);
 router.post("/logout", authController.logoutUser);
 router.get('/me', authMiddleware, authController.getMe); // ✅
+router.put('/profile', authMiddleware, authController.updateProfile);
 
 router.get("/google/url", authMiddleware, authController.getGoogleAuthUrl);
 router.get("/google/callback", authController.googleCallback);

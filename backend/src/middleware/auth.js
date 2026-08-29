@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const { isTokenBlacklisted } = require("../utils/tokenBlacklist");
+const userModel = require("../models/user.model");
 
 const getJwtSecret = () => {
   const secret = process.env.JWT_SECRET || "dev-secret-change-me";
@@ -59,6 +60,11 @@ const authMiddleware = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, getJwtSecret());
+    const user = await userModel.findById(decoded.id).select('tokenVersion').lean();
+    if (!user || Number(decoded.tokenVersion || 0) !== Number(user.tokenVersion || 0)) {
+      return res.status(401).json({ message: "Session has expired" });
+    }
+
     req.user = {
       id: decoded.id,
       username: decoded.username,
