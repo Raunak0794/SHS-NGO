@@ -116,15 +116,16 @@ const sendMessage = async (req, res) => {
       success: true,
       conversationId: conversation._id,
       message: assistantMessage,
-      sources: ragResult.sources,
-      suggestedFollowUps: ragResult.suggestedFollowUps,
-      mode: ragResult.mode,
+      sources: ragResult?.sources || [],
+      suggestedFollowUps: ragResult?.suggestedFollowUps || [],
+      mode: ragResult?.mode || mode,
     });
   } catch (error) {
     console.error("Chat message error:", error);
     return res.status(500).json({
       success: false,
       message: "SHS AI couldn't generate an answer right now. Please try again.",
+      error: error.message,
     });
   }
 };
@@ -219,19 +220,33 @@ const getConversation = async (req, res) => {
  */
 const deleteConversation = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id;
     const { id } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ success: false, message: "Invalid conversation ID" });
     }
 
-    const deleted = await Conversation.findOneAndDelete({ _id: id, userId });
+    const conversationObjectId = new mongoose.Types.ObjectId(id);
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const deleted = await Conversation.findOneAndDelete({
+      _id: conversationObjectId,
+      userId: userObjectId,
+    });
+
     if (!deleted) {
       return res.status(404).json({ success: false, message: "Conversation not found" });
     }
 
-    await Message.deleteMany({ conversationId: id, userId });
+    await Message.deleteMany({
+      conversationId: conversationObjectId,
+      userId: userObjectId,
+    });
 
     return res.status(200).json({
       success: true,
@@ -240,7 +255,11 @@ const deleteConversation = async (req, res) => {
     });
   } catch (error) {
     console.error("Delete conversation error:", error);
-    return res.status(500).json({ success: false, message: "Could not delete conversation" });
+    return res.status(500).json({
+      success: false,
+      message: "Could not delete conversation",
+      error: error.message,
+    });
   }
 };
 

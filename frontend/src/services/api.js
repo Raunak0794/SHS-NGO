@@ -15,7 +15,7 @@ export const API_BASE_URL =
 
 export const BACKEND_ORIGIN = API_BASE_URL.startsWith("http")
   ? API_BASE_URL.replace(/\/api\/?$/, "")
-  : explicitBackendUrl || window.location.origin;
+  : explicitBackendUrl || (typeof window !== "undefined" ? window.location.origin : "");
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -32,9 +32,9 @@ export const getAuthToken = () => {
       }
 
       const token = document.cookie
-        .split('; ')
-        .find((row) => row.startsWith('token='))
-        ?.split('=')[1];
+        .split("; ")
+        .find((row) => row.startsWith("token="))
+        ?.split("=")[1];
 
       return token ? decodeURIComponent(token) : null;
     }
@@ -75,6 +75,13 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (typeof window !== "undefined") {
+      const endpoint = error.config?.url || "unknown";
+      const status = error.response?.status || "network-error";
+      const serverMsg = error.response?.data?.message || error.response?.data?.error || error.message;
+      console.warn(`[SHS AI API Error] [${status}] ${endpoint}:`, serverMsg);
+    }
+
     if (typeof window === "undefined") {
       return Promise.reject(error);
     }

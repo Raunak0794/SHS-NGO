@@ -74,6 +74,7 @@ app.use(cookieParser());
 app.use(passport.initialize());
 
 
+
 // Test route
 app.get('/', (req, res) => {
   res.status(200).json({ message: "Auth service is running" });
@@ -82,7 +83,12 @@ app.get('/', (req, res) => {
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     status: 'ok',
+    version: '2.0.0',
+    branch: 'shs-ai-v2',
     database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    environment: process.env.NODE_ENV || 'development',
+    aiConfigured: Boolean(process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY),
+    timestamp: new Date().toISOString(),
   });
 });
 

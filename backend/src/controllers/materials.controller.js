@@ -161,6 +161,7 @@ const uploadMaterial = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Could not read this document. Please try another file or a clearer version.",
+      error: error.message,
     });
   }
 };

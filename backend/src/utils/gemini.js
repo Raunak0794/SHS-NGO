@@ -142,15 +142,48 @@ async function withTimeout(promise, provider) {
   }
 }
 
+const AI_REQUEST_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS || 30000);
+
 async function callGeminiProvider(prompt) {
-  const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  const model = gemini.getGenerativeModel({ model: GEMINI_MODEL });
-  const result = await withTimeout(model.generateContent(prompt), "Gemini");
-  return normalizeTextResponse(result?.response);
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is not set.");
+  }
+
+  const gemini = new GoogleGenerativeAI(apiKey);
+  const modelsToTry = [
+    process.env.GEMINI_MODEL,
+    process.env.GEMINI_CHAT_MODEL,
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+  ].filter(Boolean);
+
+  const uniqueModels = [...new Set(modelsToTry)];
+  const errors = [];
+
+  for (const modelName of uniqueModels) {
+    try {
+      const model = gemini.getGenerativeModel({ model: modelName });
+      const result = await withTimeout(model.generateContent(prompt), `Gemini(${modelName})`);
+      const text = normalizeTextResponse(result?.response);
+      if (text) return text;
+    } catch (err) {
+      errors.push(`${modelName}: ${err.message}`);
+      console.warn(`[AI Warning] Gemini model ${modelName} failed: ${err.message}. Trying next fallback...`);
+    }
+  }
+
+  throw new Error(`All Gemini models failed: ${errors.join("; ")}`);
 }
 
 async function callGroqProvider(prompt) {
-  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    throw new Error("GROQ_API_KEY is not set.");
+  }
+
+  const groq = new Groq({ apiKey });
   const completion = await withTimeout(
     groq.chat.completions.create({
       model: GROQ_MODEL,
@@ -170,7 +203,6 @@ async function callGemini(prompt) {
   }
 
   const errors = [];
-
   const providers = AI_PROVIDER === "groq" ? ["groq", "gemini"] : ["gemini", "groq"];
 
   for (const provider of providers) {
@@ -199,7 +231,7 @@ async function callGemini(prompt) {
     throw new Error("No AI provider configured. Set GEMINI_API_KEY or GROQ_API_KEY.");
   }
 
-  throw new Error(errors.join(" "));
+  throw new Error(errors.join(" | "));
 }
 
 module.exports = {

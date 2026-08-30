@@ -81,7 +81,7 @@ function getCalendarOAuthClient() {
 // ================= REGISTER =================
 async function registerUser(req, res) {
     try {
-        const { username, email, password, fullName } = req.body;
+        const { username, email, password, fullName, classLevel, subjects, learningGoals } = req.body || {};
 
         const firstName = fullName?.firstName;
         const lastName = fullName?.lastName;
@@ -96,23 +96,29 @@ async function registerUser(req, res) {
 
         const hash = await bcrypt.hash(password, 10);
 
-        const user = await userModel.create({
+        const userData = {
             username,
             email,
             password: hash,
-            fullName: { firstName, lastName }
-        });
+            fullName: { firstName, lastName },
+        };
+        if (classLevel) userData.classLevel = classLevel;
+        if (Array.isArray(subjects)) userData.subjects = subjects;
+        if (Array.isArray(learningGoals)) userData.learningGoals = learningGoals;
 
+        const user = await userModel.create(userData);
+
+        const jti = typeof randomUUID === 'function' ? randomUUID() : randomBytes(16).toString('hex');
         const token = jwt.sign({
             id: user._id,
             username: user.username,
             email: user.email,
             tokenVersion: user.tokenVersion || 0,
-        }, getJwtSecret(), { expiresIn: '1d', jwtid: randomUUID() });
+        }, getJwtSecret(), { expiresIn: '1d', jwtid: jti });
 
         res.cookie("token", token, getAuthCookieOptions());
 
-        res.status(201).json({
+        return res.status(201).json({
             message: "User registered successfully",
             user: sanitizeUser(user),
             token
@@ -120,7 +126,7 @@ async function registerUser(req, res) {
 
     } catch (err) {
         console.error("Error in registerUser:", err);
-        res.status(500).json({ message: "Internal server error" });
+        return res.status(500).json({ message: err.message || "Internal server error" });
     }
 }
 
